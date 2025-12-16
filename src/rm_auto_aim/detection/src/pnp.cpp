@@ -1,4 +1,5 @@
 #include "pnp.hpp"
+#include <iostream>
 
 //相机内参矩阵
 std::array<double, 9> camera_matrix;
@@ -79,41 +80,50 @@ double PnPSolver::calculateDistance(const cv::Mat& tvec) {
     return sqrt(tx*tx + ty*ty + tz*tz); //单位：米
 }
 
-// 对装甲板进行检测和测距
-void PnPSolver::detect(const std::vector<Armor>& armors) {
+// 对装甲板进行检测和测距，返回每个装甲板的PnP结果
+std::vector<PnPResult> PnPSolver::detect(const std::vector<Armor>& armors) {
+    std::vector<PnPResult> results;
+    results.reserve(armors.size());
+
     if (armors.empty()) {
-        return;
+        return results;
     }
 
-    cv::Mat rvec, tvec;
     for (size_t i = 0; i < armors.size(); ++i) {
         const auto& armor = armors[i];
+        cv::Mat rvec, tvec;
 
-        // 获取四个角点
-        cv::Point2f left_top = armor.left_light.top;
-        cv::Point2f right_bottom = armor.right_light.bottom;
-        cv::Point2f left_bottom = armor.left_light.bottom;
-        cv::Point2f right_top = armor.right_light.top;
+        PnPResult result{};
+        result.armor = armor;
+
+        // 求解PnP
+        result.success = solvePnP(armor, rvec, tvec);
 
         std::cout << "=== Armor " << i << " ===" << std::endl;
         std::cout << "Type: " << static_cast<int>(armor.type) << std::endl;
 
-        // 求解PnP
-        if (solvePnP(armor, rvec, tvec)) {
-            std::cout << "rvec: " << rvec << std::endl;
-            std::cout << "tvec: " << tvec << std::endl;
+        if (result.success) {
+            // 将结果存储为 Vec3d，便于外部读取
+            result.rvec = cv::Vec3d(rvec.at<double>(0), rvec.at<double>(1), rvec.at<double>(2));
+            result.tvec = cv::Vec3d(tvec.at<double>(0), tvec.at<double>(1), tvec.at<double>(2));
 
             // 获取欧拉角
-            double yaw, pitch, roll;
-            rvecToEuler(rvec, pitch, yaw, roll);
-            std::cout << "Yaw: " << yaw << " Pitch: " << pitch << " Roll: " << roll << " (degrees)" << std::endl;
+            rvecToEuler(rvec, result.pitch, result.yaw, result.roll);
+            std::cout << "rvec: " << rvec << std::endl;
+            std::cout << "tvec: " << tvec << std::endl;
+            std::cout << "Yaw: " << result.yaw << " Pitch: " << result.pitch
+                      << " Roll: " << result.roll << " (degrees)" << std::endl;
 
             // 计算距离
-            double distance = calculateDistance(tvec);
-            std::cout << "Distance: " << distance << "m" << std::endl;
+            result.distance = calculateDistance(tvec);
+            std::cout << "Distance: " << result.distance << "m" << std::endl;
         } else {
             std::cout << "PnP solving failed!" << std::endl;
         }
+
         std::cout << std::endl;
+        results.push_back(result);
     }
+
+    return results;
 }

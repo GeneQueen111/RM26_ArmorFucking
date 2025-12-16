@@ -43,11 +43,25 @@ public:
      */
     void set_detect_color(int color) { DetectionArmor::detect_color = color; }
 
+    /**
+     * @brief 获取各阶段缓存的检测结果
+     */
+    const std::vector<ArmorData>& yolo_results() const { return yolo_results_; }
+    const std::vector<Armor>& traditional_results() const { return traditional_results_; }
+    const std::vector<PnPResult>& pnp_results() const { return pnp_results_; }
+    const std::vector<ArmorData>& fused_results() const { return fused_results_; }
+
 private:
     std::string model_path_copy_;
     DetectionArmor yolo_detector_;
     TraditionalDetector traditional_detector_;
     std::unique_ptr<PnPSolver> pnp_solver_;
+
+    // 各阶段的结果缓存
+    std::vector<ArmorData> yolo_results_;
+    std::vector<Armor> traditional_results_;
+    std::vector<PnPResult> pnp_results_;
+    std::vector<ArmorData> fused_results_;
 };
 
 }  // namespace detection

@@ -26,20 +26,25 @@ Detect::Detect(const std::string& model_path,
 std::vector<ArmorData> Detect::detect(const cv::Mat& image)
 {
     if (image.empty()) {
+        yolo_results_.clear();
+        traditional_results_.clear();
+        pnp_results_.clear();
+        fused_results_.clear();
         return {};
     }
 
     // 先进行 YOLO 检测
-    const auto& yolo_armors = yolo_detector_.detect(image);
+    yolo_results_ = yolo_detector_.detect(image);
 
     // 获取传统检测器的Armor对象（用于PnP）
-    const auto& traditional_armors = traditional_detector_.detect(image);
+    traditional_results_ = traditional_detector_.detect(image);
 
     // 对每个装甲板进行PnP测距
-    pnp_solver_->detect(traditional_armors);
+    pnp_results_ = pnp_solver_->detect(traditional_results_);
 
     // 传统检测器根据 YOLO 结果进行融合/回退
-    return traditional_detector_.detect(image, yolo_armors);
+    fused_results_ = traditional_detector_.detect(image, yolo_results_);
+    return fused_results_;
 }
 
 }  // namespace detection
