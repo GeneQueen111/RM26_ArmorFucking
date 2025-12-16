@@ -1,0 +1,16 @@
+# Global detection configuration owned by detection::Detect.
+# Only basic YAML indentation is used so a lightweight parser can consume it.
+detect:
+  color: blue          # red | blue | 0 | 1
+  binary_threshold: 100
+  light_params:
+    min_ratio: 0.1
+    max_ratio: 0.4
+    max_angle: 40.0
+  armor_params:
+    min_light_ratio: 0.7
+    min_small_center_distance: 0.8
+    max_small_center_distance: 3.2
+    min_large_center_distance: 3.2
+    max_large_center_distance: 5.5
+    max_angle: 40.0

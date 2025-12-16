@@ -121,6 +121,15 @@ ov_cache/
 
 # Video files
 src/rm_auto_aim/detection/video/
+src/rm_auto_aim/detection/video/*.mp4
+src/rm_auto_aim/detection/video/*.avi
+src/rm_auto_aim/detection/video/*.mov
+src/rm_auto_aim/detection/video/resized_640/*.mp4
+src/rm_auto_aim/detection/video/resized_640/*.avi
+src/rm_auto_aim/detection/video/resized_640/*.mov
+
+# Test reports
+test_report_*.txt
 
 # Vendor SDK logs
 src/ros2_hik_camera-main/MvSdkLog/

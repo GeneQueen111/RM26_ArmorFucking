@@ -4,9 +4,11 @@
 #include <opencv2/opencv.hpp>
 #include <string>
 #include <vector>
+#include <memory>
 
 #include "yolo_detection.hpp"
 #include "traditional_detector.hpp"
+#include "pnp.hpp"
 
 namespace detection
 {
@@ -45,6 +47,7 @@ private:
     std::string model_path_copy_;
     DetectionArmor yolo_detector_;
     TraditionalDetector traditional_detector_;
+    std::unique_ptr<PnPSolver> pnp_solver_;
 };
 
 }  // namespace detection

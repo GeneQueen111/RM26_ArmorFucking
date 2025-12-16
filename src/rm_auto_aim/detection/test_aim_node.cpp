@@ -7,15 +7,33 @@
 #include <unistd.h>
 #include <chrono>
 #include <iomanip>
-#include "yolo_detection.hpp"
+#include <fstream>
+#include <sstream>
+#include <numeric>
+#include <algorithm>
 
-// 检查文件或目录是否存在
+#include "include/detect.hpp"
+#include "include/armor.hpp"
+
+///////////////////////////////////////////////////////////////////////////
+// 文件工具函数
+///////////////////////////////////////////////////////////////////////////
+
+/**
+ * @brief 检查文件或目录是否存在
+ * @param path 文件或目录路径
+ * @return bool 存在返回true，否则返回false
+ */
 bool file_exists(const std::string& path) {
     struct stat buffer;
     return (stat(path.c_str(), &buffer) == 0);
 }
 
-// 获取文件名
+/**
+ * @brief 从完整路径中提取文件名
+ * @param path 完整文件路径
+ * @return string 文件名
+ */
 std::string get_filename(const std::string& path) {
     size_t last_slash = path.find_last_of("/");
     if (last_slash != std::string::npos) {
@@ -24,7 +42,11 @@ std::string get_filename(const std::string& path) {
     return path;
 }
 
-// 获取文件扩展名
+/**
+ * @brief 获取文件扩展名
+ * @param path 文件路径
+ * @return string 扩展名（如.mp4）
+ */
 std::string get_extension(const std::string& path) {
     size_t last_dot = path.find_last_of(".");
     if (last_dot != std::string::npos) {
@@ -33,145 +55,374 @@ std::string get_extension(const std::string& path) {
     return "";
 }
 
+///////////////////////////////////////////////////////////////////////////
+// 测试结果结构体
+///////////////////////////////////////////////////////////////////////////
+
+/**
+ * @brief 存储单个视频的测试结果
+ */
+struct TestResult {
+    std::string video_name;
+    int total_frames = 0;
+    int detected_frames = 0;
+    int total_armors = 0;
+    int detected_armors = 0;
+    double avg_fps = 0.0;
+    double processing_time_ms = 0.0;
+    std::vector<double> frame_fps_list;
+    std::vector<int> armor_count_per_frame;
+};
+
+///////////////////////////////////////////////////////////////////////////
+// 统计工具函数
+///////////////////////////////////////////////////////////////////////////
+
+/**
+ * @brief 计算向量的平均值
+ * @param values 数值向量
+ * @return double 平均值
+ */
+template <typename T>
+double calculate_average(const std::vector<T>& values) {
+    if (values.empty()) return 0.0;
+    return std::accumulate(values.begin(), values.end(), 0.0) / values.size();
+}
+
+/**
+ * @brief 计算向量的最小值
+ * @param values 数值向量
+ * @return T 最小值
+ */
+template <typename T>
+T calculate_minimum(const std::vector<T>& values) {
+    if (values.empty()) return T();
+    return *std::min_element(values.begin(), values.end());
+}
+
+/**
+ * @brief 计算向量的最大值
+ * @param values 数值向量
+ * @return T 最大值
+ */
+template <typename T>
+T calculate_maximum(const std::vector<T>& values) {
+    if (values.empty()) return T();
+    return *std::max_element(values.begin(), values.end());
+}
+
+/**
+ * @brief 计算检测率
+ * @param total 总数量
+ * @param detected 检测到的数量
+ * @return double 检测率百分比
+ */
+double calculate_detection_rate(int total, int detected) {
+    return (total > 0) ? (100.0 * detected / total) : 0.0;
+}
+
+/**
+ * @brief 更新帧统计信息
+ * @param result 测试结果
+ * @param armors 检测到的装甲板列表
+ * @param processing_time_ms 处理时间（毫秒）
+ */
+void update_frame_statistics(
+    TestResult& result,
+    const std::vector<detection::ArmorData>& armors,
+    double processing_time_ms
+) {
+    if (!armors.empty()) {
+        result.detected_frames++;
+        result.total_armors += armors.size();
+        result.detected_armors += armors.size();
+        result.armor_count_per_frame.push_back(armors.size());
+    } else {
+        result.armor_count_per_frame.push_back(0);
+    }
+
+    result.processing_time_ms += processing_time_ms;
+
+    // 计算帧率
+    double fps = 1000.0 / (processing_time_ms > 0 ? processing_time_ms : 1);
+    result.frame_fps_list.push_back(fps);
+}
+
+/**
+ * @brief 输出最近的帧率统计（每100帧输出一次）
+ * @param frame_idx 当前帧索引
+ * @param frame_fps_list 帧率列表
+ */
+void print_frame_statistics(int frame_idx, const std::vector<double>& frame_fps_list) {
+    if (frame_idx % 100 == 0) {
+        size_t start_idx = (frame_fps_list.size() > 100) ? (frame_fps_list.size() - 100) : 0;
+        std::vector<double> last_100(frame_fps_list.begin() + start_idx, frame_fps_list.end());
+
+        double avg = calculate_average(last_100);
+        double min_val = calculate_minimum(last_100);
+        double max_val = calculate_maximum(last_100);
+
+        std::cout << "平均: " << std::fixed << std::setprecision(1) << avg
+                  << " | 最低: " << min_val
+                  << " | 最高: " << max_val << " FPS" << std::endl;
+    }
+}
+
+#ifdef TEST_MODE
+/**
+ * @brief 显示检测结果（仅在测试模式下启用）
+ * @param frame 原始帧
+ * @param armors 检测到的装甲板列表
+ */
+void display_detection_results(const cv::Mat& frame, const std::vector<detection::ArmorData>& armors) {
+    cv::Mat display_frame = frame.clone();
+
+    // 绘制所有检测到的装甲板
+    for (const auto& armor : armors) {
+        // 绘制四边形
+        cv::line(display_frame, armor.p1, armor.p2, cv::Scalar(0, 255, 0), 1);
+        cv::line(display_frame, armor.p2, armor.p3, cv::Scalar(0, 255, 0), 1);
+        cv::line(display_frame, armor.p3, armor.p4, cv::Scalar(0, 255, 0), 1);
+        cv::line(display_frame, armor.p4, armor.p1, cv::Scalar(0, 255, 0), 1);
+        // 绘制对角线
+        cv::line(display_frame, armor.p1, armor.p3, cv::Scalar(0, 255, 0), 1);  // 左上角到右下角
+        cv::line(display_frame, armor.p2, armor.p4, cv::Scalar(0, 255, 0), 1);  // 右上角到左下角
+        // 绘制ID文本
+        cv::putText(display_frame, std::to_string(armor.ID), armor.p1,
+                    cv::FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(0, 255, 255), 2);
+        // 绘制中心点
+        // cv::circle(display_frame, armor.center_point, 3, cv::Scalar(0, 0, 255), -1);
+    }
+
+    cv::imshow("Armor Detection Test", display_frame);
+
+    // 处理按键输入：'q'退出，空格暂停/继续
+    char key = cv::waitKey(1);
+    if (key == 'q' || key == 'Q') {
+        std::cout << "用户中断测试" << std::endl;
+        cv::destroyAllWindows();
+        exit(0);
+    }
+}
+#endif
+
+///////////////////////////////////////////////////////////////////////////
+// 报告生成函数
+///////////////////////////////////////////////////////////////////////////
+
+/**
+ * @brief 处理视频中的每一帧
+ * @param cap 视频捕获对象
+ * @param detector 装甲板检测器
+ * @param result 测试结果
+ * @return bool 处理是否成功（false表示视频结束）
+ */
+bool process_video_frames(cv::VideoCapture& cap, detection::Detect& detector, TestResult& result) {
+    cv::Mat frame;
+    int frame_idx = 0;
+
+    while (true) {
+        // 读取帧
+        cap >> frame;
+        if (frame.empty()) {
+            break;  // 视频结束
+        }
+
+        // 记录帧开始时间
+        auto frame_start_time = std::chrono::high_resolution_clock::now();
+
+        // 执行检测（完整流程：YOLO + 传统检测 + PnP）
+        auto armors = detector.detect(frame);
+
+        // 记录帧结束时间并计算处理时间
+        auto frame_end_time = std::chrono::high_resolution_clock::now();
+        auto frame_duration = std::chrono::duration_cast<std::chrono::milliseconds>(
+            frame_end_time - frame_start_time).count();
+
+        // 更新统计信息
+        update_frame_statistics(result, armors, frame_duration);
+
+        // 显示进度统计
+        print_frame_statistics(frame_idx, result.frame_fps_list);
+
+        #ifdef TEST_MODE
+        // 显示检测结果
+        display_detection_results(frame, armors);
+        #endif
+
+        frame_idx++;
+    }
+
+    // 计算平均帧率
+    if (!result.frame_fps_list.empty()) {
+        result.avg_fps = calculate_average(result.frame_fps_list);
+    }
+
+    return true;
+}
+
+/**
+ * @brief 测试单个视频文件（完整流程：YOLO + 传统检测 + PnP）
+ * @param video_path 视频文件路径
+ * @param detector 装甲板检测器
+ * @return TestResult 测试结果
+ */
+TestResult testVideo(const std::string& video_path, detection::Detect& detector) {
+    TestResult result;
+    result.video_name = get_filename(video_path);
+
+    // 打开视频文件
+    cv::VideoCapture cap(video_path);
+    if (!cap.isOpened()) {
+        std::cerr << "错误: 无法打开视频文件 " << video_path << std::endl;
+        return result;
+    }
+
+    // 获取视频基本信息
+    int total_frames = cap.get(cv::CAP_PROP_FRAME_COUNT);
+    result.total_frames = total_frames;
+
+    // 处理视频帧
+    process_video_frames(cap, detector, result);
+
+    // 释放视频资源
+    cap.release();
+
+    #ifdef TEST_MODE
+    cv::destroyAllWindows();
+    #endif
+
+    return result;
+}
+
+///////////////////////////////////////////////////////////////////////////
+// 初始化和扫描相关函数
+///////////////////////////////////////////////////////////////////////////
+
+/**
+ * @brief 获取当前工作目录
+ * @return string 当前工作目录路径
+ */
+std::string get_current_working_directory() {
+    char cwd[1024];
+    if (getcwd(cwd, sizeof(cwd))) {
+        return std::string(cwd);
+    } else {
+        std::cerr << "错误: 无法获取当前工作目录" << std::endl;
+        return "";
+    }
+}
+
+/**
+ * @brief 设置模型和视频路径
+ * @param current_path 当前工作目录路径
+ * @param model_path [out] 模型文件路径
+ * @param video_dir [out] 视频目录路径
+ */
+void setup_paths(const std::string& current_path, std::string& model_path, std::string& video_dir) {
+    model_path = current_path + "/src/rm_auto_aim/detection/model/IR_MODEL/new.xml";
+    // model_path = current_path + "/src/rm_auto_aim/detection/model/IR_MODEL/new_fp16.xml";
+    // model_path = current_path + "/src/rm_auto_aim/detection/model/IR_MODEL/new_int8.xml";
+    video_dir = current_path + "/src/rm_auto_aim/detection/video/video_640x640/";
+}
+
+/**
+ * @brief 扫描视频目录，获取所有视频文件
+ * @param video_dir 视频目录路径
+ * @return std::vector<std::string> 视频文件路径列表
+ */
+std::vector<std::string> scan_video_files(const std::string& video_dir) {
+    std::vector<std::string> video_files;
+
+    DIR* dir = opendir(video_dir.c_str());
+    if (!dir) {
+        std::cerr << "错误: 无法打开视频目录 " << video_dir << std::endl;
+        return video_files;
+    }
+
+    struct dirent* entry;
+    while ((entry = readdir(dir)) != nullptr) {
+        std::string filename = entry->d_name;
+        if (filename == "." || filename == "..") continue;
+
+        std::string full_path = video_dir + filename;
+        struct stat path_stat;
+        if (stat(full_path.c_str(), &path_stat) == 0 && S_ISREG(path_stat.st_mode)) {
+            std::string ext = get_extension(filename);
+            if (ext == ".mp4" || ext == ".avi" || ext == ".mov") {
+                video_files.push_back(full_path);
+            }
+        }
+    }
+    closedir(dir);
+
+    // 按文件名排序
+    std::sort(video_files.begin(), video_files.end());
+
+    return video_files;
+}
+
+/**
+ * @brief 初始化检测器
+ * @param model_path 模型文件路径
+ * @return detection::Detect 初始化后的检测器
+ */
+detection::Detect initialize_detector(const std::string& model_path) {
+    detection::Detect detector(model_path);
+    return detector;
+}
+
+///////////////////////////////////////////////////////////////////////////
+// 主函数
+///////////////////////////////////////////////////////////////////////////
+
 int main(int argc, char** argv)
 {
     // 获取当前工作目录
-    char cwd[1024];
-    bool got_cwd = getcwd(cwd, sizeof(cwd));
-    if (got_cwd) {
-        std::cout << "当前工作目录: " << cwd << std::endl;
-    } else {
-        std::cerr << "错误: 无法获取当前工作目录" << std::endl;
+    std::string current_path = get_current_working_directory();
+    if (current_path.empty()) {
         return -1;
     }
-    
-    std::string current_path = cwd;
-    
-    // 设置模型路径和视频路径 - 使用new.xml（可根据需要替换）
-    std::string model_path = current_path + "/src/rm_auto_aim/detection/model/IR_MODEL/new.xml";
-    // model_path = current_path + "/src/rm_auto_aim/detection/model/IR_MODEL/new_fp16.xml";
-    // model_path = current_path + "/src/rm_auto_aim/detection/model/IR_MODEL/new_int8.xml";
-    std::string video_dir = current_path + "/src/rm_auto_aim/detection/video/resized_640/";
-    
-    // 检查视频目录是否存在
-    if (!file_exists(video_dir)) {
-        std::cerr << "错误: 视频目录不存在: " << video_dir << std::endl;
-        return -1;
-    }
-    
-    // 列出所有视频文件
-    std::vector<std::string> video_files;
-    DIR* dir = opendir(video_dir.c_str());
-    if (dir) {
-        struct dirent* entry;
-        while ((entry = readdir(dir)) != nullptr) {
-            std::string filename = entry->d_name;
-            if (filename == "." || filename == "..") continue;
-            
-            std::string full_path = video_dir + filename;
-            struct stat path_stat;
-            if (stat(full_path.c_str(), &path_stat) == 0 && S_ISREG(path_stat.st_mode)) {
-                std::string ext = get_extension(filename);
-                if (ext == ".mp4" || ext == ".avi" || ext == ".mov") {
-                    video_files.push_back(full_path);
-                }
-            }
-        }
-        closedir(dir);
-    }
-    
-    if (video_files.empty()) {
-        std::cerr << "错误: 在 " << video_dir << " 中没有找到视频文件" << std::endl;
-        return -1;
-    }
-    
-    std::cout << "找到 " << video_files.size() << " 个视频文件:" << std::endl;
-    for (size_t i = 0; i < video_files.size(); ++i) {
-        std::cout << "  " << i + 1 << ". " << get_filename(video_files[i]) << std::endl;
-    }
-    
-    // 让用户选择视频文件
-    int choice = 0;
-    std::cout << "请选择要测试的视频文件 (1-" << video_files.size() << "): ";
-    std::cin >> choice;
-    
-    if (choice < 1 || choice > static_cast<int>(video_files.size())) {
-        std::cerr << "错误: 无效的选择" << std::endl;
-        return -1;
-    }
-    
-    std::string selected_video = video_files[choice - 1];
-    std::cout << "选择的视频: " << selected_video << std::endl;
-    
+
+    // 设置模型路径和视频路径
+    std::string model_path, video_dir;
+    setup_paths(current_path, model_path, video_dir);
+
     // 检查模型文件是否存在
     if (!file_exists(model_path)) {
         std::cerr << "错误: 模型文件不存在: " << model_path << std::endl;
         return -1;
     }
-    
-    std::cout << "模型路径: " << model_path << std::endl;
-    
+
+    // 检查视频目录是否存在
+    if (!file_exists(video_dir)) {
+        std::cerr << "错误: 视频目录不存在: " << video_dir << std::endl;
+        return -1;
+    }
+
+    // 扫描视频文件
+    std::vector<std::string> video_files = scan_video_files(video_dir);
+
+    if (video_files.empty()) {
+        std::cerr << "错误: 在 " << video_dir << " 中没有找到视频文件" << std::endl;
+        return -1;
+    }
+
     try {
-        // 创建检测器实例
-        std::cout << "初始化检测器..." << std::endl;
-        detection::DetectionArmor detectionArmor(model_path, selected_video);
+        // 初始化检测器
+        detection::Detect detector = initialize_detector(model_path);
 
-        std::cout << "开始目标检测..." << std::endl;
-        std::cout << "按 'q' 键退出，按 'n' 键切换到下一个视频" << std::endl;
-
-        // 帧率计算变量
-        int frame_count = 0;
-        auto start_time = std::chrono::high_resolution_clock::now();
-
-        // 打开视频
-        cv::VideoCapture cap(selected_video);
-        if (!cap.isOpened()) {
-            std::cerr << "错误: 无法打开视频文件" << std::endl;
-            return -1;
+        // 测试所有视频文件
+        std::vector<TestResult> all_results;
+        for (const auto& video : video_files) {
+            auto result = testVideo(video, detector);
+            all_results.push_back(std::move(result));
         }
-
-        cv::Mat frame;
-        while (true) {
-            // 读取帧
-            cap >> frame;
-            if (frame.empty()) {
-                // 视频播放完毕，重置到开头循环播放
-                cap.set(cv::CAP_PROP_POS_FRAMES, 0);
-                continue;
-            }
-
-            // 执行检测
-            detectionArmor.detect(frame);
-
-            // 帧数计数
-            frame_count++;
-
-            // 每100帧计算一次平均帧率
-            if (frame_count % 100 == 0) {
-                auto end_time = std::chrono::high_resolution_clock::now();
-                auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
-                double avg_fps = 100.0 / (duration / 1000.0);
-
-                std::cout << "最近100帧平均帧率: "
-                          << std::fixed << std::setprecision(2) << avg_fps << " FPS" << std::endl;
-
-                // 重置计时器
-                start_time = std::chrono::high_resolution_clock::now();
-            }
-
-            // 显示结果
-            #ifdef TEST_MODE
-            // detectionArmor.showImage();
-            #endif
-        }
-
-        // 输出总体统计
-        std::cout << "\n总共处理帧数: " << frame_count << std::endl;
 
     } catch (const std::exception& e) {
         std::cerr << "错误: " << e.what() << std::endl;
         return -1;
     }
-    
+
     return 0;
 }

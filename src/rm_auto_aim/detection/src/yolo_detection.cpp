@@ -121,9 +121,6 @@ void DetectionArmor::drawObject(cv::Mat& image, std::vector<ArmorData>& datas)
 
     cv::putText(image, "fps:" + std::to_string(static_cast<int>(fps)), cv::Point(10, 30),
                 cv::FONT_HERSHEY_SIMPLEX, 1, cv::Scalar(0, 255, 0), 2);
-
-    // 显示图像
-    cv::imshow("Detection", image);
 }
 
 inline double DetectionArmor::sigmoid(double x) 
@@ -287,25 +284,7 @@ void DetectionArmor::buildArmorData(const std::vector<int>& indices,
 
 void DetectionArmor::infer()
 {
-    // 1. 使用推理引擎执行推理
-    cv::Mat output_buffer = m_inference_engine.infer(m_img);
 
-    // 2. 存储临时结果
-    std::vector<cv::Rect> boxes;
-    std::vector<int> num_class;
-    std::vector<int> color_class;
-    std::vector<float> confidences;
-    std::vector<int> indices;
-    std::vector<std::vector<cv::Point>> fourPointModel;
-
-    // 3. 解析检测结果
-    parseDetections(output_buffer, boxes, num_class, color_class, confidences, fourPointModel);
-
-    // 4. 应用非极大值抑制
-    applyNMS(boxes, confidences, indices);
-
-    // 5. 构建装甲板数据
-    buildArmorData(indices, fourPointModel, num_class, color_class);
 
 }
 
@@ -327,7 +306,25 @@ std::vector<ArmorData>& DetectionArmor::detect(const cv::Mat& input_image)
     m_armors_datas.clear();
     m_img = input_image;  // 直接使用输入图像，PPP自动处理BGR→RGB、u8→f32、归一化
 
-    infer();
+        // 1. 使用推理引擎执行推理
+    cv::Mat output_buffer = m_inference_engine.infer(m_img);
+
+    // 2. 存储临时结果
+    std::vector<cv::Rect> boxes;
+    std::vector<int> num_class;
+    std::vector<int> color_class;
+    std::vector<float> confidences;
+    std::vector<int> indices;
+    std::vector<std::vector<cv::Point>> fourPointModel;
+
+    // 3. 解析检测结果
+    parseDetections(output_buffer, boxes, num_class, color_class, confidences, fourPointModel);
+
+    // 4. 应用非极大值抑制
+    applyNMS(boxes, confidences, indices);
+
+    // 5. 构建装甲板数据
+    buildArmorData(indices, fourPointModel, num_class, color_class);
     
     return m_armors_datas;
 }
