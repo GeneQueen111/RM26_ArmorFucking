@@ -15,6 +15,7 @@
 #include "include/detect.hpp"
 #include "include/data.hpp"
 #include "include/pnp.hpp"
+#include "include/kalman_detector.hpp"
 
 ///////////////////////////////////////////////////////////////////////////
 // 文件工具函数
@@ -169,16 +170,17 @@ void print_frame_statistics(int frame_idx, const std::vector<double>& frame_fps_
     }
 }
 
-#ifdef TEST_MODE
 /**
  * @brief 显示检测结果（仅在测试模式下启用）
  * @param frame 原始帧
  * @param armors 检测到的装甲板列表 (Traditional)
  * @param pnp_results PnP解算结果列表
+ * @param kalman_results Kalman滤波结果列表
  */
 void display_detection_results(const cv::Mat& frame,
                                const std::vector<detection::TraditionalArmorData>& armors,
-                               const std::vector<PnPResult>& pnp_results) {
+                               const std::vector<PnPResult>& pnp_results,
+                               const std::vector<detection::KalmanResult>& kalman_results) {
     cv::Mat display_frame = frame.clone();
 
 
@@ -212,18 +214,53 @@ void display_detection_results(const cv::Mat& frame,
         cv::putText(display_frame, armor.classfication_result, left_light.top,
                     cv::FONT_HERSHEY_SIMPLEX, 0.8, cv::Scalar(0, 255, 255), 2);
 
-        // 显示PnP距离（在装甲板上方）
-        if (i < pnp_results.size() && pnp_results[i].success) {
-            // 计算装甲板上方位置（取左右灯条顶部的中点再往上偏移）
-            cv::Point2f top_center = (left_light.top + right_light.top) / 2;
-            cv::Point text_pos(static_cast<int>(top_center.x - 30), static_cast<int>(top_center.y - 10));
+        // // 显示PnP距离（在装甲板上方）
+        // if (i < pnp_results.size() && pnp_results[i].success) {
+        //     // 计算装甲板上方位置（取左右灯条顶部的中点再往上偏移）
+        //     cv::Point2f top_center = (left_light.top + right_light.top) / 2;
+        //     cv::Point text_pos(static_cast<int>(top_center.x - 30), static_cast<int>(top_center.y - 10));
 
-            // 格式化距离字符串（保留2位小数，单位米）
+        //     // 格式化距离字符串（保留2位小数，单位米）
+        //     std::ostringstream oss;
+        //     oss << std::fixed << std::setprecision(2) << pnp_results[i].distance << "m";
+
+        //     cv::putText(display_frame, oss.str(), text_pos,
+        //                 cv::FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(0, 255, 0), 2);
+        // }
+    }
+
+    // 绘制Kalman滤波结果
+    for (const auto& kalman : kalman_results) {
+        if (kalman.is_tracking) {
+            // 绘制滤波后的中心点（黄色实心圆）
+            cv::circle(display_frame, kalman.filtered_center, 8, cv::Scalar(0, 255, 255), -1);
+
+            // 绘制预测的中心点（橙色空心圆）
+            cv::circle(display_frame, kalman.predicted_center, 10, cv::Scalar(0, 165, 255), 2);
+
+            // 绘制从滤波点到预测点的速度向量线（白色）
+            cv::line(display_frame, kalman.filtered_center, kalman.predicted_center,
+                     cv::Scalar(255, 255, 255), 2);
+
+            // 显示速度信息（在预测点旁边）
             std::ostringstream oss;
-            oss << std::fixed << std::setprecision(2) << pnp_results[i].distance << "m";
+            oss << "v:(" << std::fixed << std::setprecision(1)
+                << kalman.velocity.x << "," << kalman.velocity.y << ")";
+            cv::putText(display_frame, oss.str(),
+                        cv::Point(static_cast<int>(kalman.predicted_center.x + 15),
+                                  static_cast<int>(kalman.predicted_center.y)),
+                        cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(255, 255, 255), 1);
+        } else if (kalman.lost_count > 0) {
+            // 目标丢失时，用红色空心圆显示预测位置
+            cv::circle(display_frame, kalman.predicted_center, 10, cv::Scalar(0, 0, 255), 2);
 
-            cv::putText(display_frame, oss.str(), text_pos,
-                        cv::FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(0, 255, 0), 2);
+            // 显示丢失帧数
+            std::ostringstream oss;
+            oss << "lost:" << kalman.lost_count;
+            cv::putText(display_frame, oss.str(),
+                        cv::Point(static_cast<int>(kalman.predicted_center.x + 15),
+                                  static_cast<int>(kalman.predicted_center.y)),
+                        cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 0, 255), 1);
         }
     }
 
@@ -237,7 +274,6 @@ void display_detection_results(const cv::Mat& frame,
         exit(0);
     }
 }
-#endif
 
 ///////////////////////////////////////////////////////////////////////////
 // 报告生成函数
@@ -276,6 +312,7 @@ bool process_video_frames(cv::VideoCapture& cap, detection::Detect& detector, Te
         auto yolo_armors = detector.yolo_results();
         auto armors = detector.traditional_results();
         auto pnp_results = detector.pnp_results();
+        auto kalman_results = detector.kalman_results();
 
         // 更新统计信息
         update_frame_statistics(result, armors, frame_duration);
@@ -284,7 +321,7 @@ bool process_video_frames(cv::VideoCapture& cap, detection::Detect& detector, Te
         print_frame_statistics(frame_idx, result.frame_fps_list);
 
         // 显示检测结果
-        display_detection_results(frame, armors, pnp_results);
+        display_detection_results(frame, armors, pnp_results, kalman_results);
 
         frame_idx++;
     }

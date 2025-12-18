@@ -1,5 +1,6 @@
 #include "detect.hpp"
 #include "pnp.hpp"
+#include "kalman_detector.hpp"
 #include <iostream>
 #include <vector>
 
@@ -28,6 +29,9 @@ Detect::Detect(const std::string& model_path,
     };
     std::vector<double> dist_coeffs = {0, 0, 0, 0, 0};
     pnp_solver_ = std::make_unique<PnPSolver>(camera_matrix, dist_coeffs);
+
+    // 初始化 Kalman 滤波检测器
+    kalman_detector_ = std::make_unique<KalmanDetector>(1e-2, 1e-1, 10);
 }
 
 void Detect::set_detect_color(EnemyColor color)
@@ -43,6 +47,7 @@ void Detect::detect(const cv::Mat& image)
         yolo_detector_->clear();
         traditional_detector_->clear();
         pnp_solver_->clear();
+        kalman_detector_->clear();
         delta_msg_ = DeltaMsg{};
         target_info_msg_ = TargetInfoMsg{};
         return;
@@ -57,7 +62,11 @@ void Detect::detect(const cv::Mat& image)
     // PnP 求解（结果存储在 pnp_solver_ 内部）
     pnp_solver_->detect(traditional_results);
 
-    // 填充消息数据（使用传统融合后的结果）
+    // Kalman 滤波（结果存储在 kalman_detector_ 内部）
+    // 注意：滤波结果仅用于跟踪预测，不修改 delta_msg_ 和 target_info_msg_
+    kalman_detector_->detect(traditional_results);
+
+    // 填充消息数据（使用传统融合后的结果，不使用Kalman滤波结果）
     if (!traditional_results.empty()) {
         const auto& target = traditional_results[0];
         const cv::Point optical_center(image.cols / 2, image.rows / 2);

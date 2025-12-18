@@ -10,6 +10,7 @@
 #include "yolo_detection.hpp"
 #include "traditional_detector.hpp"
 #include "pnp.hpp"
+#include "kalman_detector.hpp"
 
 namespace detection
 {
@@ -80,6 +81,7 @@ public:
     const std::vector<YoloArmorData>& yolo_results() const { return yolo_detector_->getdata(); }
     const std::vector<TraditionalArmorData>& traditional_results() const { return traditional_detector_->getArmors(); }
     const std::vector<PnPResult>& pnp_results() const { return pnp_solver_->getResults(); }
+    const std::vector<KalmanResult>& kalman_results() const { return kalman_detector_->getResults(); }
 
     /**
      * @brief 获取 delta 消息数据
@@ -99,6 +101,7 @@ private:
     std::unique_ptr<YoloDetector> yolo_detector_;
     std::unique_ptr<TraditionalDetector> traditional_detector_;
     std::unique_ptr<PnPSolver> pnp_solver_;
+    std::unique_ptr<KalmanDetector> kalman_detector_;
 
     // 消息数据缓存
     DeltaMsg delta_msg_;
