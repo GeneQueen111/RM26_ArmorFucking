@@ -13,7 +13,8 @@
 #include <algorithm>
 
 #include "include/detect.hpp"
-#include "include/armor.hpp"
+#include "include/data.hpp"
+#include "include/pnp.hpp"
 
 ///////////////////////////////////////////////////////////////////////////
 // 文件工具函数
@@ -129,7 +130,7 @@ double calculate_detection_rate(int total, int detected) {
  */
 void update_frame_statistics(
     TestResult& result,
-    const std::vector<detection::ArmorData>& armors,
+    const std::vector<detection::TraditionalArmorData>& armors,
     double processing_time_ms
 ) {
     if (!armors.empty()) {
@@ -172,26 +173,58 @@ void print_frame_statistics(int frame_idx, const std::vector<double>& frame_fps_
 /**
  * @brief 显示检测结果（仅在测试模式下启用）
  * @param frame 原始帧
- * @param armors 检测到的装甲板列表
+ * @param armors 检测到的装甲板列表 (Traditional)
+ * @param pnp_results PnP解算结果列表
  */
-void display_detection_results(const cv::Mat& frame, const std::vector<detection::ArmorData>& armors) {
+void display_detection_results(const cv::Mat& frame,
+                               const std::vector<detection::TraditionalArmorData>& armors,
+                               const std::vector<PnPResult>& pnp_results) {
     cv::Mat display_frame = frame.clone();
 
-    // 绘制所有检测到的装甲板
-    for (const auto& armor : armors) {
-        // 绘制四边形
-        cv::line(display_frame, armor.p1, armor.p2, cv::Scalar(0, 255, 0), 1);
-        cv::line(display_frame, armor.p2, armor.p3, cv::Scalar(0, 255, 0), 1);
-        cv::line(display_frame, armor.p3, armor.p4, cv::Scalar(0, 255, 0), 1);
-        cv::line(display_frame, armor.p4, armor.p1, cv::Scalar(0, 255, 0), 1);
-        // 绘制对角线
-        cv::line(display_frame, armor.p1, armor.p3, cv::Scalar(0, 255, 0), 1);  // 左上角到右下角
-        cv::line(display_frame, armor.p2, armor.p4, cv::Scalar(0, 255, 0), 1);  // 右上角到左下角
-        // 绘制ID文本
-        cv::putText(display_frame, std::to_string(armor.ID), armor.p1,
-                    cv::FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(0, 255, 255), 2);
-        // 绘制中心点
-        // cv::circle(display_frame, armor.center_point, 3, cv::Scalar(0, 0, 255), -1);
+
+    // 绘制传统检测的灯条和装甲板
+    for (size_t i = 0; i < armors.size(); ++i) {
+        const auto& armor = armors[i];
+        // 绘制左右灯条
+        const auto& left_light = armor.left_light;
+        const auto& right_light = armor.right_light;
+
+        // 绘制灯条顶部和底部标记点
+        cv::circle(display_frame, left_light.top, 3, cv::Scalar(255, 255, 255), 1);
+        cv::circle(display_frame, left_light.bottom, 3, cv::Scalar(255, 255, 255), 1);
+        cv::circle(display_frame, right_light.top, 3, cv::Scalar(255, 255, 255), 1);
+        cv::circle(display_frame, right_light.bottom, 3, cv::Scalar(255, 255, 255), 1);
+
+        // 绘制灯条线（根据颜色选择不同颜色）
+        auto left_color = left_light.color == EnemyColor::RED ? cv::Scalar(255, 0, 255) : cv::Scalar(255, 255, 0);
+        auto right_color = right_light.color == EnemyColor::RED ? cv::Scalar(255, 0, 255) : cv::Scalar(255, 255, 0);
+        cv::line(display_frame, left_light.top, left_light.bottom, left_color, 5);
+        cv::line(display_frame, right_light.top, right_light.bottom, right_color, 5);
+
+        // 绘制装甲板对角线
+        cv::line(display_frame, left_light.top, right_light.bottom, cv::Scalar(0, 255, 0), 2);
+        cv::line(display_frame, left_light.bottom, right_light.top, cv::Scalar(0, 255, 0), 2);
+
+        // 绘制装甲板中心点
+        cv::circle(display_frame, armor.center, 5, cv::Scalar(255, 0, 0), -1);
+
+        // 显示分类结果
+        cv::putText(display_frame, armor.classfication_result, left_light.top,
+                    cv::FONT_HERSHEY_SIMPLEX, 0.8, cv::Scalar(0, 255, 255), 2);
+
+        // 显示PnP距离（在装甲板上方）
+        if (i < pnp_results.size() && pnp_results[i].success) {
+            // 计算装甲板上方位置（取左右灯条顶部的中点再往上偏移）
+            cv::Point2f top_center = (left_light.top + right_light.top) / 2;
+            cv::Point text_pos(static_cast<int>(top_center.x - 30), static_cast<int>(top_center.y - 10));
+
+            // 格式化距离字符串（保留2位小数，单位米）
+            std::ostringstream oss;
+            oss << std::fixed << std::setprecision(2) << pnp_results[i].distance << "m";
+
+            cv::putText(display_frame, oss.str(), text_pos,
+                        cv::FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(0, 255, 0), 2);
+        }
     }
 
     cv::imshow("Armor Detection Test", display_frame);
@@ -232,12 +265,17 @@ bool process_video_frames(cv::VideoCapture& cap, detection::Detect& detector, Te
         auto frame_start_time = std::chrono::high_resolution_clock::now();
 
         // 执行检测（完整流程：YOLO + 传统检测 + PnP）
-        auto armors = detector.detect(frame);
+        detector.detect(frame);
 
         // 记录帧结束时间并计算处理时间
         auto frame_end_time = std::chrono::high_resolution_clock::now();
         auto frame_duration = std::chrono::duration_cast<std::chrono::milliseconds>(
             frame_end_time - frame_start_time).count();
+
+
+        auto yolo_armors = detector.yolo_results();
+        auto armors = detector.traditional_results();
+        auto pnp_results = detector.pnp_results();
 
         // 更新统计信息
         update_frame_statistics(result, armors, frame_duration);
@@ -245,10 +283,8 @@ bool process_video_frames(cv::VideoCapture& cap, detection::Detect& detector, Te
         // 显示进度统计
         print_frame_statistics(frame_idx, result.frame_fps_list);
 
-        #ifdef TEST_MODE
         // 显示检测结果
-        display_detection_results(frame, armors);
-        #endif
+        display_detection_results(frame, armors, pnp_results);
 
         frame_idx++;
     }
@@ -271,6 +307,9 @@ TestResult testVideo(const std::string& video_path, detection::Detect& detector)
     TestResult result;
     result.video_name = get_filename(video_path);
 
+    std::cout << "========================================" << std::endl;
+    std::cout << "正在测试视频: " << video_path << std::endl;
+
     // 打开视频文件
     cv::VideoCapture cap(video_path);
     if (!cap.isOpened()) {
@@ -280,6 +319,14 @@ TestResult testVideo(const std::string& video_path, detection::Detect& detector)
 
     // 获取视频基本信息
     int total_frames = cap.get(cv::CAP_PROP_FRAME_COUNT);
+    int width = cap.get(cv::CAP_PROP_FRAME_WIDTH);
+    int height = cap.get(cv::CAP_PROP_FRAME_HEIGHT);
+    double fps = cap.get(cv::CAP_PROP_FPS);
+
+    std::cout << "视频信息: " << width << "x" << height
+              << " @ " << fps << " FPS, 共 " << total_frames << " 帧" << std::endl;
+    std::cout << "========================================" << std::endl;
+
     result.total_frames = total_frames;
 
     // 处理视频帧
@@ -368,7 +415,7 @@ std::vector<std::string> scan_video_files(const std::string& video_dir) {
  * @return detection::Detect 初始化后的检测器
  */
 detection::Detect initialize_detector(const std::string& model_path) {
-    detection::Detect detector(model_path);
+    detection::Detect detector(model_path, EnemyColor::BLUE);
     return detector;
 }
 

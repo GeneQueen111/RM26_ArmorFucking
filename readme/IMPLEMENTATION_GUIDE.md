@@ -326,7 +326,7 @@ ament_target_dependencies(${PROJECT_NAME}
 | `src/yolo_detection.cpp` | 检测逻辑实现 |
 | `include/inference_engine.hpp` | OpenVINO 引擎封装 |
 | `src/inference_engine.cpp` | 推理实现 |
-| `include/armor.hpp` | Light/Armor 数据结构 |
+| `include/data.hpp` | Light/Armor 数据结构 |
 | `model/new2.onnx` | YOLO 检测模型 |
 
 ---

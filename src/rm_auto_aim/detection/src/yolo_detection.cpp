@@ -6,24 +6,22 @@
 
 using namespace detection;
 
-// 静态成员变量定义（共享变量，其他节点可能使用）
-int detection::DetectionArmor::detect_color = 0;  // 0: 红色，1: 蓝色
-
 // 常量定义
 constexpr int INPUT_SIZE = 640;
 constexpr float CONFIDENCE_THRESHOLD = 0.6f;
 constexpr float NMS_THRESHOLD = 0.4f;
 constexpr int INFERENCE_THREADS = 14;
 
-DetectionArmor::DetectionArmor(std::string& model_path, std::string video_path)
+YoloDetector::YoloDetector(std::string& model_path, EnemyColor detect_color, std::string video_path)
     : m_inference_engine(model_path, INPUT_SIZE, INFERENCE_THREADS),
-      fps(0.0)
+      fps(0.0),
+      detect_color_(detect_color)
 {
     // 初始化传统视觉检测器（使用默认参数）
     TraditionalDetector::LightParams light_params;
     TraditionalDetector::ArmorParams armor_params;
     int binary_threshold = 100;  // 默认二值化阈值
-    m_traditional_detector = std::make_unique<TraditionalDetector>(binary_threshold, light_params, armor_params);
+    m_traditional_detector = std::make_unique<TraditionalDetector>(binary_threshold, light_params, armor_params, detect_color_);
 
     // 如果提供了视频路径，则初始化视频捕获
     if (!video_path.empty()) {
@@ -32,15 +30,16 @@ DetectionArmor::DetectionArmor(std::string& model_path, std::string video_path)
 }
 
 // 匹配 TX2 分支的构造函数重载
-DetectionArmor::DetectionArmor(std::string& model_path, bool ifcountTime)
+YoloDetector::YoloDetector(std::string& model_path, EnemyColor detect_color, bool ifcountTime)
     : m_inference_engine(model_path, INPUT_SIZE, INFERENCE_THREADS),
-      fps(0.0)
+      fps(0.0),
+      detect_color_(detect_color)
 {
     // 初始化传统视觉检测器（使用默认参数）
     TraditionalDetector::LightParams light_params;
     TraditionalDetector::ArmorParams armor_params;
     int binary_threshold = 100;  // 默认二值化阈值
-    m_traditional_detector = std::make_unique<TraditionalDetector>(binary_threshold, light_params, armor_params);
+    m_traditional_detector = std::make_unique<TraditionalDetector>(binary_threshold, light_params, armor_params, detect_color_);
 }
 
 /**
@@ -73,24 +72,24 @@ void getAngle(cv::Point2f point, float &yaw, float &pitch,
     yaw = std::atan(tan_yaw);
 }
 
-DetectionArmor::~DetectionArmor()
+YoloDetector::~YoloDetector()
 {
     // std::cout << "quit from detection" << std::endl;
     clearHeap();
 }
 
-void DetectionArmor::clearHeap()
+void YoloDetector::clearHeap()
 {
     m_cap.release();
     cv::destroyAllWindows();
 }
 
-void DetectionArmor::drawObject(cv::Mat& image, std::vector<ArmorData>& datas)
+void YoloDetector::drawObject(cv::Mat& image, std::vector<YoloArmorData>& datas)
 {
     // 计算并绘制光心点（图像中心）
     cv::Point optical_center(image.cols / 2, image.rows / 2);
 
-    for (ArmorData& d : datas)
+    for (YoloArmorData& d : datas)
     {
         // 绘制四个角点
         std::vector<cv::Point> armor_points = {d.p1, d.p2, d.p3, d.p4};
@@ -123,13 +122,13 @@ void DetectionArmor::drawObject(cv::Mat& image, std::vector<ArmorData>& datas)
                 cv::FONT_HERSHEY_SIMPLEX, 1, cv::Scalar(0, 255, 0), 2);
 }
 
-inline double DetectionArmor::sigmoid(double x) 
+inline double YoloDetector::sigmoid(double x) 
 {
     return (1 / (1 + std::exp(-x)));
 }
 
 
-void DetectionArmor::run()
+void YoloDetector::run()
 {
     size_t frame_count = 0;
 
@@ -169,7 +168,7 @@ void DetectionArmor::run()
     }
 }
 
-void DetectionArmor::parseDetections(const cv::Mat& output_buffer,
+void YoloDetector::parseDetections(const cv::Mat& output_buffer,
                                     std::vector<cv::Rect>& boxes,
                                     std::vector<int>& num_class,
                                     std::vector<int>& color_class,
@@ -199,9 +198,9 @@ void DetectionArmor::parseDetections(const cv::Mat& output_buffer,
         num_class.push_back(class_id.x);
         color_class.push_back(color_id.x);
 
-        // 检测颜色过滤
-        if ((DetectionArmor::detect_color == 0 && color_id.x == 1) ||
-            (DetectionArmor::detect_color == 1 && color_id.x == 0)) continue;
+        // 检测颜色过滤（网络输出: 0=蓝色, 1=红色）
+        if ((detect_color_ == EnemyColor::RED && color_id.x == 0) ||
+            (detect_color_ == EnemyColor::BLUE && color_id.x == 1)) continue;
 
         // 获取第一个输出向量的指针
         const float* f_ptr = output_buffer.ptr<float>(i);
@@ -232,7 +231,7 @@ void DetectionArmor::parseDetections(const cv::Mat& output_buffer,
     }
 }
 
-void DetectionArmor::applyNMS(const std::vector<cv::Rect>& boxes,
+void YoloDetector::applyNMS(const std::vector<cv::Rect>& boxes,
                              const std::vector<float>& confidences,
                              std::vector<int>& indices)
 {
@@ -245,7 +244,7 @@ void DetectionArmor::applyNMS(const std::vector<cv::Rect>& boxes,
     );
 }
 
-void DetectionArmor::buildArmorData(const std::vector<int>& indices,
+void YoloDetector::buildArmorData(const std::vector<int>& indices,
                                     const std::vector<std::vector<cv::Point>>& fourPointModel,
                                     const std::vector<int>& num_class,
                                     const std::vector<int>& color_class)
@@ -253,7 +252,7 @@ void DetectionArmor::buildArmorData(const std::vector<int>& indices,
     // 保留最终的数据
     for (int valid_index = 0; valid_index < indices.size(); ++valid_index)
     {
-        ArmorData d;
+        YoloArmorData d;
 
         // 设置四个角点
         d.p1 = fourPointModel[indices[valid_index]][0];
@@ -268,45 +267,32 @@ void DetectionArmor::buildArmorData(const std::vector<int>& indices,
         // 设置ID
         d.ID = num_class[indices[valid_index]];
 
-        // 设置颜色
+        // 设置颜色（网络输出: 0=蓝色, 1=红色）
         int color = color_class[indices[valid_index]];
-        if (color == 0) {
-            d.color = Color::RED;
-        } else if (color == 1) {
-            d.color = Color::BLUE;
+        if (color == 1) {
+            d.color = EnemyColor::RED;
         } else {
-            d.color = Color::NONE;
+            d.color = EnemyColor::BLUE;
         }
 
         m_armors_datas.push_back(d);
     }
 }
 
-void DetectionArmor::infer()
-{
-
-
-}
-
-
-
-std::vector<ArmorData>& DetectionArmor::getdata()
+std::vector<YoloArmorData>& YoloDetector::getdata()
 {
     return m_armors_datas;  // 返回当前帧的装甲板数据
 }
 
-std::vector<ArmorData>& DetectionArmor::detect(const cv::Mat& input_image)
+void YoloDetector::infer()
 {
-    if (input_image.empty())
-    {
-        m_armors_datas.clear();
-        return m_armors_datas;
+    m_armors_datas.clear();
+
+    if (m_img.empty()) {
+        return;
     }
 
-    m_armors_datas.clear();
-    m_img = input_image;  // 直接使用输入图像，PPP自动处理BGR→RGB、u8→f32、归一化
-
-        // 1. 使用推理引擎执行推理
+    // 1. 使用推理引擎执行推理
     cv::Mat output_buffer = m_inference_engine.infer(m_img);
 
     // 2. 存储临时结果
@@ -325,22 +311,34 @@ std::vector<ArmorData>& DetectionArmor::detect(const cv::Mat& input_image)
 
     // 5. 构建装甲板数据
     buildArmorData(indices, fourPointModel, num_class, color_class);
-    
+}
+
+std::vector<YoloArmorData>& YoloDetector::detect(const cv::Mat& input_image)
+{
+    if (input_image.empty())
+    {
+        m_armors_datas.clear();
+        return m_armors_datas;
+    }
+
+    m_img = input_image;  // 直接使用输入图像，PPP自动处理BGR→RGB、u8→f32、归一化
+    infer();
+
     return m_armors_datas;
 }
 
-void DetectionArmor::start_detection()
+void YoloDetector::start_detection()
 {
     run();
 }
 
-void DetectionArmor::start_detection(const cv::Mat& input_image)
+void YoloDetector::start_detection(const cv::Mat& input_image)
 {
     detect(input_image);
 }
 
 #ifdef TEST_MODE
-void DetectionArmor::showImage()
+void YoloDetector::showImage()
 {
     if (!m_img.empty())
     {
@@ -348,7 +346,7 @@ void DetectionArmor::showImage()
     }
 }
 
-void DetectionArmor::format_print_data_test()
+void YoloDetector::format_print_data_test()
 {
     std::cout << "armor Num: " << getdata().size() << std::endl;
     for (auto d : getdata())

@@ -30,7 +30,7 @@ PnPSolver::PnPSolver(
   large_armor_points_.emplace_back(cv::Point3f(0, -large_half_y, -large_half_z));
 }
 
-bool PnPSolver::solvePnP(const Armor & armor, cv::Mat & rvec, cv::Mat & tvec)
+bool PnPSolver::solvePnP(const TraditionalArmorData & armor, cv::Mat & rvec, cv::Mat & tvec)
 {
   std::vector<cv::Point2f> image_armor_points;
 
@@ -81,12 +81,12 @@ double PnPSolver::calculateDistance(const cv::Mat& tvec) {
 }
 
 // 对装甲板进行检测和测距，返回每个装甲板的PnP结果
-std::vector<PnPResult> PnPSolver::detect(const std::vector<Armor>& armors) {
-    std::vector<PnPResult> results;
-    results.reserve(armors.size());
+const std::vector<PnPResult>& PnPSolver::detect(const std::vector<TraditionalArmorData>& armors) {
+    results_.clear();
+    results_.reserve(armors.size());
 
     if (armors.empty()) {
-        return results;
+        return results_;
     }
 
     for (size_t i = 0; i < armors.size(); ++i) {
@@ -99,9 +99,6 @@ std::vector<PnPResult> PnPSolver::detect(const std::vector<Armor>& armors) {
         // 求解PnP
         result.success = solvePnP(armor, rvec, tvec);
 
-        std::cout << "=== Armor " << i << " ===" << std::endl;
-        std::cout << "Type: " << static_cast<int>(armor.type) << std::endl;
-
         if (result.success) {
             // 将结果存储为 Vec3d，便于外部读取
             result.rvec = cv::Vec3d(rvec.at<double>(0), rvec.at<double>(1), rvec.at<double>(2));
@@ -109,21 +106,14 @@ std::vector<PnPResult> PnPSolver::detect(const std::vector<Armor>& armors) {
 
             // 获取欧拉角
             rvecToEuler(rvec, result.pitch, result.yaw, result.roll);
-            std::cout << "rvec: " << rvec << std::endl;
-            std::cout << "tvec: " << tvec << std::endl;
-            std::cout << "Yaw: " << result.yaw << " Pitch: " << result.pitch
-                      << " Roll: " << result.roll << " (degrees)" << std::endl;
 
             // 计算距离
             result.distance = calculateDistance(tvec);
-            std::cout << "Distance: " << result.distance << "m" << std::endl;
         } else {
             std::cout << "PnP solving failed!" << std::endl;
         }
-
-        std::cout << std::endl;
-        results.push_back(result);
+        results_.push_back(result);
     }
 
-    return results;
+    return results_;
 }

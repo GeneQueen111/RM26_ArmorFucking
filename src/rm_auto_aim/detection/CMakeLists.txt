@@ -33,8 +33,10 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     openvino::runtime
 )
 
+target_compile_definitions(test_aim_node PRIVATE TEST_MODE)
+
 target_link_libraries(test_aim_node PRIVATE
-    ${OpenVINO_LIBRARIES}  
-    ${OpenCV_LIBS}              
+    ${OpenVINO_LIBRARIES}
+    ${OpenCV_LIBS}
     openvino::runtime
 )

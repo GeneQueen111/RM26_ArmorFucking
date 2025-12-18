@@ -5,10 +5,8 @@ namespace armor_detection
     // 构造函数接收模型路径
     ImageSubscriber::ImageSubscriber(const std::string& model_path)
         : Node("image_subscriber"),
-        detector_(model_path)
+        detector_(model_path, EnemyColor::RED)
     {
-        // 设置检测颜色: 0 = 红色, 1 = 蓝色
-        detector_.set_detect_color(0);
         // 使用 sensor_data 初始化的 QoS（但我们显式将发布 target_delta 的 QoS 设为 reliable + transient_local）
         auto image_qos = rclcpp::QoS(rclcpp::QoSInitialization::from_rmw(rmw_qos_profile_sensor_data));
         image_qos.best_effort(); // 保持摄像头订阅为 sensor_data 风格（通常 best-effort）
@@ -75,38 +73,33 @@ namespace armor_detection
             auto cv_ptr = cv_bridge::toCvShare(msg, "bgr8");
             const cv::Mat& image = cv_ptr->image;
             
-            auto armors = detector_.detect(image);
+            detector_.detect(image);
 
-            if (!armors.empty()) {
-                detection::ArmorData target = armors[0];
-                optical_center_x_ = target.optical_center.x;
-                optical_center_y_ = target.optical_center.y;
-                delta_x_ = target.delta_x;
-                delta_y_ = target.delta_y;
-                flag_ = float(target.flag);
-                target_x_ = static_cast<float>(target.center_point.x);
-                target_y_ = static_cast<float>(target.center_point.y);
+            const auto& delta = detector_.get_delta_msg();
+            const auto& info = detector_.get_target_info_msg();
 
-                delta_msg_.x = delta_x_;
-                delta_msg_.y = delta_y_;
-                delta_msg_.z = 0.0f;
+            if (info.flag > 0) {
+                delta_msg_.x = delta.x;
+                delta_msg_.y = delta.y;
+                delta_msg_.z = delta.z;
                 delta_publisher_->publish(delta_msg_);
 
                 target_info_msg_.data = {
-                    target_x_,
-                    target_y_,
-                    optical_center_x_,
-                    optical_center_y_,
-                    delta_x_,
-                    delta_y_,
-                    flag_
+                    info.target_x,
+                    info.target_y,
+                    info.optical_center_x,
+                    info.optical_center_y,
+                    info.delta_x,
+                    info.delta_y,
+                    info.flag
                 };
                 target_info_publisher_->publish(target_info_msg_);
 
                 RCLCPP_INFO(this->get_logger(),
                     "目标: (%.1f, %.1f) | 光心: (%.1f, %.1f) | 差值: (%.1f, %.1f) | 标志: %.1f",
-                    target_x_, target_y_, optical_center_x_, optical_center_y_, delta_x_, delta_y_, flag_);
-                last_publish_time_ = now; // 记录发布时间
+                    info.target_x, info.target_y, info.optical_center_x, info.optical_center_y,
+                    info.delta_x, info.delta_y, info.flag);
+                last_publish_time_ = now;
             }
 
             // 发布带检测框的调试图像（仅在有订阅者时，best-effort，不反压）

@@ -45,7 +45,7 @@ detection/
 ├── include/
 │   ├── yolo_detection.hpp         # 主检测类 DetectionArmor
 │   ├── inference_engine.hpp       # OpenVINO推理引擎封装
-│   ├── armor.hpp                  # ArmorData 数据结构
+│   ├── data.hpp                  # ArmorData 数据结构
 │   ├── traditional_detector.hpp   # 传统灯条检测（备用）
 │   └── performance_logger.hpp     # 性能日志
 ├── src/
@@ -99,7 +99,7 @@ constexpr int INFERENCE_THREADS = 14;
 
 ### 3.3 数据结构：ArmorData
 
-**文件**：`include/armor.hpp`
+**文件**：`include/data.hpp`
 
 ```cpp
 struct ArmorData {
@@ -224,7 +224,7 @@ qos.transient_local();
 | 检测主类 | `src/rm_auto_aim/detection/include/yolo_detection.hpp` |
 | 检测实现 | `src/rm_auto_aim/detection/src/yolo_detection.cpp` |
 | 推理引擎 | `src/rm_auto_aim/detection/include/inference_engine.hpp` |
-| 数据结构 | `src/rm_auto_aim/detection/include/armor.hpp` |
+| 数据结构 | `src/rm_auto_aim/detection/include/data.hpp` |
 | ROS2节点 | `src/recive_pkg/include/recive_pkg/image_subscriber_node.hpp` |
 | 电机控制 | `src/ros2_armor_can/src/armor_send.cpp` |
 

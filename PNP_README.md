@@ -93,6 +93,6 @@ file(GLOB_RECURSE SOURCES "src/*.cpp")
 
 ## 注意事项
 
-1. 需要包含`armor.hpp`头文件（已存在）
+1. 需要包含`data.hpp`头文件（已存在）
 2. 使用OpenCV库（已在CMakeLists.txt中配置）
 3. 所有的API都位于`detection`命名空间中

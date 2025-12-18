@@ -6,7 +6,7 @@
 #include <string>
 #include <opencv2/opencv.hpp>
 #include "traditional_detector.hpp"
-#include "armor.hpp"
+#include "data.hpp"
 #include "inference_engine.hpp"
 
 // 测试模式宏定义
@@ -19,75 +19,56 @@ constexpr double GUN_CAM_DISTANCE_Z = 0.0;
 
 namespace detection
 {
-
-    /**
-     * @brief 装甲板颜色枚举
-     */
-    enum class Color { RED, BLUE, NONE };
-
-    /**
-     * @brief 装甲板数据结构
-     */
-    struct ArmorData
-    {
-        cv::Point center_point;    ///< 目标中心点
-        cv::Point optical_center;  ///< 光心点
-        float delta_x;             ///< 目标中心点与光心点的x差值
-        float delta_y;             ///< 目标中心点与光心点的y差值
-        // float length;           ///< 长度
-        // float width;            ///< 宽度
-        int flag = 0;              ///< 判断是否有装甲板
-
-        cv::Point p1;  ///< 左上角点
-        cv::Point p2;  ///< 右上角点
-        cv::Point p3;  ///< 右下角点
-        cv::Point p4;  ///< 左下角点
-
-        int ID = 0;    ///< 装甲板ID
-        Color color;   ///< 装甲板颜色
-    };
-
     /**
      * @brief 装甲板检测类
      */
-    class DetectionArmor 
+    class YoloDetector
     {
     public:
-        // 指定识别的颜色（共享变量，其他节点可能使用）
-        static int detect_color;  ///< 0: 红色，1: 蓝色
-        
         double fps;  ///< 帧率
 
-        DetectionArmor() = default;  ///< 默认构造函数
-        DetectionArmor(const DetectionArmor&) = delete;  ///< 禁止拷贝构造
-        DetectionArmor& operator=(const DetectionArmor&) = delete;  ///< 禁止拷贝赋值
-        DetectionArmor(DetectionArmor&&) = default;  ///< 默认移动构造
-        DetectionArmor& operator=(DetectionArmor&&) = default;  ///< 默认移动赋值
+        YoloDetector() = default;  ///< 默认构造函数
+        YoloDetector(const YoloDetector&) = delete;  ///< 禁止拷贝构造
+        YoloDetector& operator=(const YoloDetector&) = delete;  ///< 禁止拷贝赋值
+        YoloDetector(YoloDetector&&) = default;  ///< 默认移动构造
+        YoloDetector& operator=(YoloDetector&&) = default;  ///< 默认移动赋值
 
         /**
          * @brief 构造函数
          * @param model_path 模型路径
+         * @param detect_color 检测颜色
          * @param video_path 视频路径（可选）
          */
-        DetectionArmor(std::string& model_path, std::string video_path = "");
+        YoloDetector(std::string& model_path, EnemyColor detect_color, std::string video_path = "");
 
         /**
          * @brief 构造函数重载（匹配 TX2 分支）
          * @param model_path 模型路径
+         * @param detect_color 检测颜色
          * @param ifcountTime 是否计时（TX2 分支参数）
          */
-        DetectionArmor(std::string& model_path, bool ifcountTime);
+        YoloDetector(std::string& model_path, EnemyColor detect_color, bool ifcountTime);
 
-        ~DetectionArmor();
+        ~YoloDetector();
 
-        std::vector<ArmorData>& detect(const cv::Mat& inputMat);
+        /**
+         * @brief 设置检测颜色
+         */
+        void set_detect_color(EnemyColor color) { detect_color_ = color; }
+
+        /**
+         * @brief 获取检测颜色
+         */
+        EnemyColor get_detect_color() const { return detect_color_; }
+
+        std::vector<YoloArmorData>& detect(const cv::Mat& inputMat);
 
         /**
          * @brief 在图像上绘制检测结果
          * @param image 输入图像
          * @param datas 装甲板数据
          */
-        void drawObject(cv::Mat& image, std::vector<ArmorData>& datas);
+        void drawObject(cv::Mat& image, std::vector<YoloArmorData>& datas);
         
         /**
          * @brief Sigmoid函数
@@ -100,7 +81,12 @@ namespace detection
          * @brief 获取当前帧的装甲板数据
          * @return 装甲板数据引用
          */
-        std::vector<ArmorData>& getdata();
+        std::vector<YoloArmorData>& getdata();
+
+        /**
+         * @brief 清空检测结果
+         */
+        void clear() { m_armors_datas.clear(); }
 
         /**
          * @brief 开始持续检测（使用视频或默认摄像头）
@@ -143,7 +129,10 @@ namespace detection
 
 
         /// 当前帧的装甲板数据
-        std::vector<ArmorData> m_armors_datas;
+        std::vector<YoloArmorData> m_armors_datas;
+
+        /// 检测颜色
+        EnemyColor detect_color_;
 
         /// 传统视觉检测器
         std::unique_ptr<TraditionalDetector> m_traditional_detector;

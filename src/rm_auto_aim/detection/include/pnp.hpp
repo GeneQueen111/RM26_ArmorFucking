@@ -5,12 +5,12 @@
 #include <opencv2/core.hpp>
 #include <array>
 #include <vector>
-#include "armor.hpp"
+#include "data.hpp"
 
 // PnP 结果数据，用于在 Detect 类中暂存
 struct PnPResult
 {
-  Armor armor;          // 输入装甲板
+  TraditionalArmorData armor;          // 输入装甲板
   cv::Vec3d rvec;       // 旋转向量
   cv::Vec3d tvec;       // 平移向量
   double yaw{0.0};      // 偏航
@@ -27,7 +27,7 @@ public:
     const std::vector<double> & distortion_coefficients); //畸变系数
 
   // Get 3d position
-  bool solvePnP(const Armor & armor, cv::Mat & rvec, cv::Mat & tvec); // 求解pnp
+  bool solvePnP(const TraditionalArmorData & armor, cv::Mat & rvec, cv::Mat & tvec); // 求解pnp
 
   // Calculate the distance between armor center and image center
   float calculateDistanceToCenter(const cv::Point2f & image_point); // 计算装甲板中心到图像中心的距离
@@ -39,11 +39,20 @@ public:
   double calculateDistance(const cv::Mat& tvec);
 
   // 对装甲板进行检测和测距，并返回结果
-  std::vector<PnPResult> detect(const std::vector<Armor>& armors);
+  const std::vector<PnPResult>& detect(const std::vector<TraditionalArmorData>& armors);
+
+  // 获取检测结果
+  const std::vector<PnPResult>& getResults() const { return results_; }
+
+  // 清空检测结果
+  void clear() { results_.clear(); }
 
 private:
   cv::Mat camera_matrix_;
   cv::Mat dist_coeffs_;
+
+  // 检测结果缓存
+  std::vector<PnPResult> results_;
 
   // Unit: mm
   static constexpr float SMALL_ARMOR_WIDTH = 135;

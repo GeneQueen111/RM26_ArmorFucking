@@ -16,10 +16,11 @@ set(OpenVINO_DIR /home/ubuntu/桌面/Robomaster/openvino_toolkit_ubuntu22_2025.0
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(SRC
-      /home/ubuntu/桌面/Robomaster/RM26_ROS2PKG/src/rm_auto_aim/detection/src/yolo_detection.cpp
-      /home/ubuntu/桌面/Robomaster/RM26_ROS2PKG/src/rm_auto_aim/detection/src/traditional_detector.cpp
-      /home/ubuntu/桌面/Robomaster/RM26_ROS2PKG/src/rm_auto_aim/detection/src/detect.cpp
-      /home/ubuntu/桌面/Robomaster/RM26_ROS2PKG/src/rm_auto_aim/detection/src/inference_engine.cpp)
+      /home/ubuntu/桌面/RM26_ArmorFucking/RM26_ArmorFucking/src/rm_auto_aim/detection/src/yolo_detection.cpp
+      /home/ubuntu/桌面/RM26_ArmorFucking/RM26_ArmorFucking/src/rm_auto_aim/detection/src/traditional_detector.cpp
+      /home/ubuntu/桌面/RM26_ArmorFucking/RM26_ArmorFucking/src/rm_auto_aim/detection/src/detect.cpp
+      /home/ubuntu/桌面/RM26_ArmorFucking/RM26_ArmorFucking/src/rm_auto_aim/detection/src/inference_engine.cpp
+      /home/ubuntu/桌面/RM26_ArmorFucking/RM26_ArmorFucking/src/rm_auto_aim/detection/src/pnp.cpp)
 
 # find dependencies
 find_package(ament_cmake REQUIRED)
@@ -28,18 +29,18 @@ find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
-find_package(OpenCV REQUIRED COMPONENTS core imgproc highgui videoio dnn)
+find_package(OpenCV REQUIRED COMPONENTS core imgproc highgui videoio dnn calib3d)
 find_package(cv_bridge REQUIRED)
 
 
 # Include directories
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include  
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include
                     ${OpenCV_INCLUDE_DIRS}
                     ${sensor_msgs_INCLUDE_DIRS}
                     ${geometry_msgs_INCLUDE_DIRS}
                     ${std_msgs_INCLUDE_DIRS}
-                    /home/ubuntu/桌面/Robomaster/RM26_ROS2PKG/src/rm_auto_aim/detection/include
-                    /home/ubuntu/桌面/Robomaster/RM26_ROS2PKG/src/recive_pkg/include
+                    /home/ubuntu/桌面/RM26_ArmorFucking/RM26_ArmorFucking/src/rm_auto_aim/detection/include
+                    /home/ubuntu/桌面/RM26_ArmorFucking/RM26_ArmorFucking/src/recive_pkg/include
                     )
 
 

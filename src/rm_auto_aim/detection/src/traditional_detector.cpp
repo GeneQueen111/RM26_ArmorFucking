@@ -1,30 +1,31 @@
 #include "traditional_detector.hpp"
 #include "yolo_detection.hpp"
-TraditionalDetector::TraditionalDetector(const int & bin_thres, const LightParams & l, const ArmorParams & a)
-: binary_thres(bin_thres), l(l), a(a){};
+#include <algorithm>
+#include <cmath>
+TraditionalDetector::TraditionalDetector(const int & bin_thres, const LightParams & l, const ArmorParams & a, EnemyColor detect_color)
+: binary_thres(bin_thres), l(l), a(a), detect_color_(detect_color){};
 
 cv::Mat TraditionalDetector::preprocessImage(const cv::Mat & rgb_img)
 {
-  const int detect_color = detection::DetectionArmor::detect_color;
-  if(detect_color==1)
+  if(detect_color_ == EnemyColor::BLUE)
   {
     cv::Mat gray_img;
     cv::cvtColor(rgb_img, gray_img, cv::COLOR_RGB2GRAY);
 
     cv::Mat binary_img;
-    cv::threshold(gray_img, binary_img, binary_thres, 255, cv::THRESH_BINARY);
+    cv::threshold(gray_img, binary_img, 50, 255, cv::THRESH_BINARY);
     return binary_img;
     
   }
   
-  else if(detect_color==0)
+  else if(detect_color_ == EnemyColor::RED)
   {
     int flag = 2; // 0-蓝色通道，1-绿色通道，2-红色通道
     std::vector<cv::Mat> channels;
     cv::Mat frame,thresh_img,binary_img;
     cv::split(rgb_img, channels); //通道分离BGR
     cv::GaussianBlur(channels[flag], frame, cv::Size(5, 5), 0); //高斯模糊，去除细小噪点
-    cv::threshold(frame, thresh_img, 100, 255, cv::THRESH_BINARY);   //二值化
+    cv::threshold(frame, thresh_img, 50, 255, cv::THRESH_BINARY);   //二值化
     cv::Mat kernel = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(5, 5)); 
     cv::morphologyEx(thresh_img, binary_img, cv::MORPH_OPEN, kernel); //开运算，去除灯条边缘噪点
 
@@ -33,6 +34,7 @@ cv::Mat TraditionalDetector::preprocessImage(const cv::Mat & rgb_img)
   return cv::Mat();
   
 }
+
 bool TraditionalDetector::isLight(const Light & light)
 {
   // The ratio of light (short side / long side)
@@ -42,15 +44,6 @@ bool TraditionalDetector::isLight(const Light & light)
   bool angle_ok = light.tilt_angle < l.max_angle;
 
   bool is_light = ratio_ok && angle_ok;
-  
-
-  // Fill in debug information
-//   auto_aim_interfaces::msg::DebugLight light_data;
-//   light_data.center_x = light.center.x;
-//   light_data.ratio = ratio;
-//   light_data.angle = light.tilt_angle;
-//   light_data.is_light = is_light;
-//   this->debug_lights.data.emplace_back(light_data);
 
   return is_light;
 }
@@ -93,7 +86,7 @@ std::vector<Light> TraditionalDetector::findLights(const cv::Mat & rbg_img, cons
           }
         }
         // Sum of red pixels > sum of blue pixels ?
-        light.color = sum_r > sum_b ? RED : BLUE;
+        light.color = sum_r > sum_b ? EnemyColor::RED : EnemyColor::BLUE;
         lights.emplace_back(light);
       }
     }
@@ -102,16 +95,14 @@ std::vector<Light> TraditionalDetector::findLights(const cv::Mat & rbg_img, cons
   return lights;
 }
 
-std::vector<Armor> TraditionalDetector::matchLights(const std::vector<Light> & lights)
+std::vector<TraditionalArmorData> TraditionalDetector::matchLights(const std::vector<Light> & lights)
 {
-  std::vector<Armor> armors;
-  // this->debug_armors.data.clear();
-  const int detect_color = detection::DetectionArmor::detect_color;
-
-  // Loop all the pairing of lights
+  std::vector<TraditionalArmorData> armors;
   for (auto light_1 = lights.begin(); light_1 != lights.end(); light_1++) {
     for (auto light_2 = light_1 + 1; light_2 != lights.end(); light_2++) {
-      if (light_1->color != detect_color || light_2->color != detect_color) continue;
+      if (light_1->color != detect_color_ || light_2->color != detect_color_) {
+        continue;
+      };
 
       if (containLight(*light_1, *light_2, lights)) {
         continue;
@@ -119,18 +110,16 @@ std::vector<Armor> TraditionalDetector::matchLights(const std::vector<Light> & l
 
       auto type = isArmor(*light_1, *light_2);
       if (type != ArmorType::INVALID) {
-        auto armor = Armor(*light_1, *light_2);
+        auto armor = TraditionalArmorData(*light_1, *light_2);
         armor.type = type;
         armors.emplace_back(armor);
       }
     }
   }
-  // std::cout << "Detected armors: " << armors.size() << std::endl;
   return armors;
 }
 
-bool TraditionalDetector::containLight(
-  const Light & light_1, const Light & light_2, const std::vector<Light> & lights)
+bool TraditionalDetector::containLight(const Light & light_1, const Light & light_2, const std::vector<Light> & lights)  
 {
   auto points = std::vector<cv::Point2f>{light_1.top, light_1.bottom, light_2.top, light_2.bottom};
   auto bounding_rect = cv::boundingRect(points);
@@ -151,7 +140,7 @@ bool TraditionalDetector::containLight(
 
 ArmorType TraditionalDetector::isArmor(const Light & light_1, const Light & light_2)//判断是否为装甲板及类型
 {
-  // Ratio of the length of 2 lights (short side / long side)
+    // Ratio of the length of 2 lights (short side / long side)
   float light_length_ratio = light_1.length < light_2.length ? light_1.length / light_2.length
                                                              : light_2.length / light_1.length;
   bool light_ratio_ok = light_length_ratio > a.min_light_ratio;
@@ -178,18 +167,10 @@ ArmorType TraditionalDetector::isArmor(const Light & light_1, const Light & ligh
   } else {
     type = ArmorType::INVALID;
   }
-
-  // Fill in debug information
-  //auto_aim_interfaces::msg::DebugArmor armor_data;
-//   armor_data.type = ARMOR_TYPE_STR[static_cast<int>(type)];
-//   armor_data.center_x = (light_1.center.x + light_2.center.x) / 2;
-//   armor_data.light_ratio = light_length_ratio;
-//   armor_data.center_distance = center_distance;
-//   armor_data.angle = angle;
-  //this->debug_armors.data.emplace_back(armor_data);
-
+  
   return type;
 }
+
 cv::Mat TraditionalDetector::getAllNumbersImage() ///获取所有数字图片
 {
   if (armors_.empty()) {
@@ -205,8 +186,8 @@ cv::Mat TraditionalDetector::getAllNumbersImage() ///获取所有数字图片
     return all_num_img;
   }
 }
-cv::Point2f getLineIntersection(const std::pair<cv::Point2f, cv::Point2f>& line1,
-                            const std::pair<cv::Point2f, cv::Point2f>& line2) {
+
+cv::Point2f getLineIntersection(const std::pair<cv::Point2f, cv::Point2f>& line1, const std::pair<cv::Point2f, cv::Point2f>& line2) {
     // 提取直线1的两点坐标
     float x1 = line1.first.x, y1 = line1.first.y;
     float x2 = line1.second.x, y2 = line1.second.y;
@@ -239,99 +220,58 @@ cv::Point2f getLineIntersection(const std::pair<cv::Point2f, cv::Point2f>& line1
     );
 }
 
-
-void TraditionalDetector::drawResults(cv::Mat & img,cv::Point2f &center_point)
-{
-  // Draw Lights
-  for (const auto & light : lights_) {
-    cv::circle(img, light.top, 3, cv::Scalar(255, 255, 255), 1);
-    cv::circle(img, light.bottom, 3, cv::Scalar(255, 255, 255), 1);
-    auto line_color = light.color == RED ? cv::Scalar(255, 0, 255) : cv::Scalar(255, 255, 0);
-    cv::line(img, light.top, light.bottom, line_color, 5);
-  }
-
-  // Draw armors
-  for (const auto & armor : armors_) {
-    cv::line(img, armor.left_light.top, armor.right_light.bottom, cv::Scalar(0, 255, 0), 2);
-    cv::line(img, armor.left_light.bottom, armor.right_light.top, cv::Scalar(0, 255, 0), 2);
-    std::pair<cv::Point2f, cv::Point2f> line1 = {armor.left_light.top, armor.right_light.bottom};
-    std::pair<cv::Point2f, cv::Point2f> line2 = {armor.left_light.bottom, armor.right_light.top};
-    cv::Point2f center = getLineIntersection(line1, line2);
-    cv::circle(img, center, 5, cv::Scalar(255, 0, 0), -1);
-    center_point = center;
-  }
-
-  // Show numbers and confidence
-  for (const auto & armor : armors_) {
-    cv::putText(
-      img, armor.classfication_result, armor.left_light.top, cv::FONT_HERSHEY_SIMPLEX, 0.8,
-      cv::Scalar(0, 255, 255), 2);
-  }
-}
-
 void TraditionalDetector::get_roi(cv::Mat& image, std::vector<cv::Point>& points, cv::Mat& ROI)
 {
     cv::Mat mask = cv::Mat::zeros(image.size(), CV_8UC1);
-
     cv::Point lt = points[0];  // 左上角
     cv::Point rb = points[2];  // 右下角
     cv::Point lb = points[1];  // 左下角
     cv::Point rt = points[3];  // 右上角
-
-    cv::polylines(image, std::vector<cv::Point>{lt, rt, rb, lb}, true, cv::Scalar(255, 0, 0), 2);
-    std::vector<cv::Point> roi_points = {lt, rt, rb, lb};
-    cv::fillConvexPoly(mask, roi_points, cv::Scalar(255, 0, 0));
-    cv::bitwise_and(image, image, ROI, mask);
-}
-std::vector<Armor> TraditionalDetector::detect(const cv::Mat & input)
-{
-    cv::Mat binary_img;
-    binary_img = preprocessImage(input);
-    lights_ = findLights(input, binary_img);
-    armors_ = matchLights(lights_);
-    return armors_;
+    std::vector<cv::Point> roi_points = {lt, rt, rb, lb}; 
+    cv::fillConvexPoly(mask, roi_points, cv::Scalar(255,0,0));
+    cv::bitwise_and(image, image,ROI, mask);
 }
 
-std::vector<detection::ArmorData> TraditionalDetector::detect(
+const std::vector<detection::TraditionalArmorData>& TraditionalDetector::detect(
     const cv::Mat & input,
-    const std::vector<detection::ArmorData> & yolo_armors)
+    const std::vector<detection::YoloArmorData> & yolo_armors)
 {
-    std::vector<detection::ArmorData> results;
-    if (!input.empty()) {
-        const cv::Point optical_center(input.cols / 2, input.rows / 2);
+  armors_.clear();
+  lights_.clear();
 
-        // 优先复用 YOLO 结果
-        if (!yolo_armors.empty()) {
-            results.reserve(yolo_armors.size());
-            for (const auto & armor : yolo_armors) {
-                detection::ArmorData enriched = armor;
-                enriched.optical_center = optical_center;
-                enriched.delta_x = (enriched.center_point.x - optical_center.x) + GUN_CAM_DISTANCE_X;
-                enriched.delta_y = (optical_center.y - enriched.center_point.y) + GUN_CAM_DISTANCE_Y;
-                enriched.flag = 1;
-                results.push_back(enriched);
-            }
-            return results;
-        }
+  // std::cout << "[Traditional] yolo_armors.size=" << yolo_armors.size() << std::endl;
 
-        // 回退到纯传统检测
-        const auto armors_only_traditional = detect(input);
-        results.reserve(armors_only_traditional.size());
-        for (const auto & armor : armors_only_traditional) {
-            detection::ArmorData data{};
-            data.center_point = armor.center;
-            data.optical_center = optical_center;
-            data.delta_x = (data.center_point.x - optical_center.x) + GUN_CAM_DISTANCE_X;
-            data.delta_y = (optical_center.y - data.center_point.y) + GUN_CAM_DISTANCE_Y;
-            data.flag = 1;
-            data.p1 = armor.left_light.top;
-            data.p2 = armor.right_light.top;
-            data.p3 = armor.right_light.bottom;
-            data.p4 = armor.left_light.bottom;
-            data.ID = 0;
-            data.color = detection::DetectionArmor::detect_color == 0 ? detection::Color::RED : detection::Color::BLUE;
-            results.push_back(data);
-        }
-    }
-    return results;
+  if (input.empty() || yolo_armors.empty()) {
+    return armors_;
+  }
+
+  // 在 YOLO 框附近扩大一定像素后，使用已有的传统方法做二次确认
+  constexpr int kPadding = 20;
+
+  for (const auto & d : yolo_armors) {
+
+    cv::Point lt = cv::Point(d.p1.x-20, d.p1.y-20);  // 左上角
+    cv::Point rb = cv::Point(d.p3.x+20, d.p3.y+20);  //
+
+    cv::Point lb = cv::Point(d.p2.x-20, d.p2.y+20);  // 左下角
+    cv::Point rt = cv::Point(d.p4.x+20, d.p4.y-20);  // 右上角
+    std::vector<cv::Point> points = {lt, rt, rb, lb};
+
+    cv::Mat roi_src = input.clone();
+    cv::Mat roi;
+    get_roi(roi_src, points, roi);
+
+    cv::Mat binary_img;
+    binary_img = preprocessImage(roi);
+    lights_ = findLights(roi, binary_img);
+
+    auto detected_armors = matchLights(lights_);
+    // 将检测到的装甲板添加到armors_成员变量中
+    armors_.insert(armors_.end(), detected_armors.begin(), detected_armors.end());
+
+    // 提取所有装甲板的数字图像
+    auto num_img = getAllNumbersImage();
+  }
+
+  return armors_;
 }
