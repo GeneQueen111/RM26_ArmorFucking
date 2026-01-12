@@ -3,6 +3,7 @@
 
 #include <opencv2/opencv.hpp>
 #include <opencv2/video/tracking.hpp>
+#include <deque>
 #include <vector>
 #include "data.hpp"
 #include "pnp.hpp"
@@ -19,6 +20,7 @@ struct KalmanResult
     cv::Point2f predicted_center;  // 预测的中心点
     cv::Point2f velocity;          // 速度估计 (像素/帧)
     bool is_tracking = false;      // 是否正在跟踪
+    bool is_rotating = false;      // 是否处于旋转状态（装甲板反复出现/消失且运动方向稳定）
     int lost_count = 0;            // 丢失计数
 };
 
@@ -30,13 +32,9 @@ class KalmanDetector
 public:
     /**
      * @brief 构造函数
-     * @param process_noise 过程噪声系数（默认1e-2）
-     * @param measurement_noise 测量噪声系数（默认1e-1）
-     * @param max_lost_frames 最大丢失帧数（默认10）
+     * @note 参数已在类内部写死，如需调整请修改实现文件或成员默认值
      */
-    KalmanDetector(double process_noise = 1e-2,
-                   double measurement_noise = 1e-1,
-                   int max_lost_frames = 10);
+    KalmanDetector();
 
     /**
      * @brief 检测入口，对传统检测结果进行Kalman滤波
@@ -73,11 +71,24 @@ public:
     void reset();
 
     /**
+     * @brief 设置预测提前量（单位：帧）
+     */
+    void setLeadTime(float lead_time) { lead_time_ = lead_time; }
+
+    /**
      * @brief 检查是否正在跟踪目标
      */
     bool isTracking() const { return is_tracking_; }
 
 private:
+    static constexpr size_t kRotationWindowFrames = 120;
+    static constexpr int kRotationToggleThreshold = 2;
+    static constexpr int kRotationMinMissingFrames = 2;
+    static constexpr float kRotationMinMotionPx = 1.0f;
+    static constexpr float kRotationDirDotThreshold = 0.3f;
+    static constexpr int kRotationDirScoreThreshold = 3;
+    static constexpr int kRotationDirScoreMax = 30;
+
     /**
      * @brief 初始化Kalman滤波器
      */
@@ -96,13 +107,17 @@ private:
      */
     cv::Point2f predict();
 
+    void resetRotationState();
+    bool updateRotationState(bool has_measurement, bool is_jump, const cv::Point2f& output_center);
+
     // Kalman滤波器
     cv::KalmanFilter kf_;
 
     // 滤波器参数
-    double process_noise_;
-    double measurement_noise_;
-    int max_lost_frames_;
+    double process_noise_ = 1e-2;
+    double measurement_noise_ = 1e-1;
+    int max_lost_frames_ = 10;
+    float lead_time_ = 1.0f;
 
     // 跟踪状态
     bool is_tracking_ = false;
@@ -115,6 +130,14 @@ private:
 
     // 上一帧的状态
     cv::Point2f last_position_;
+
+    // 旋转状态判断缓存
+    std::deque<bool> measurement_history_;
+    cv::Point2f last_output_center_;
+    bool has_last_output_center_ = false;
+    cv::Point2f motion_ref_dir_;
+    int motion_dir_score_ = 0;
+    bool is_rotating_ = false;
 };
 
 }  // namespace detection

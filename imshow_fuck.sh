@@ -6,17 +6,43 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORKSPACE_DIR="$SCRIPT_DIR"
 
 # 路径与环境
-OPENVINO_DIR="/home/ubuntu/桌面/Robomaster/openvino_toolkit_ubuntu22_2025.0.0.17942.1f68be9f594_x86_64"
+WORKSPACE_PARENT="$(dirname "$WORKSPACE_DIR")"
 ROS_LOG_DIR="${WORKSPACE_DIR}/log"
 mkdir -p "${ROS_LOG_DIR}"
+
+find_openvino_root() {
+  local base_dir="$1"
+  local candidate
+  for candidate in "$base_dir"/openvino*; do
+    [ -e "$candidate" ] || continue
+    if [ -f "$candidate/setupvars.sh" ] || [ -f "$candidate/bin/setupvars.sh" ]; then
+      printf '%s' "$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
+
+if [ -z "$OPENVINO_DIR" ]; then
+  OPENVINO_DIR="$(find_openvino_root "$WORKSPACE_PARENT")"
+fi
+
+setupvars_file=""
+if [ -n "$OPENVINO_DIR" ]; then
+  if [ -f "${OPENVINO_DIR}/setupvars.sh" ]; then
+    setupvars_file="${OPENVINO_DIR}/setupvars.sh"
+  elif [ -f "${OPENVINO_DIR}/bin/setupvars.sh" ]; then
+    setupvars_file="${OPENVINO_DIR}/bin/setupvars.sh"
+  fi
+fi
 
 echo "=== 启动带显示的调试流程 ==="
 
 # 加载 OpenVINO（若存在）
-if [ -f "${OPENVINO_DIR}/setupvars.sh" ]; then
-  echo "[env] source OpenVINO"
+if [ -n "$setupvars_file" ]; then
+  echo "[env] source OpenVINO (${setupvars_file})"
   # shellcheck disable=SC1090
-  source "${OPENVINO_DIR}/setupvars.sh"
+  source "${setupvars_file}"
 else
   echo "[warn] OpenVINO setupvars.sh 未找到，可能影响推理性能"
 fi

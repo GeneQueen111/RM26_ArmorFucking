@@ -12,6 +12,8 @@
 #include <numeric>
 #include <algorithm>
 
+constexpr int kWaitKeyDelayMs = 30;  // 增加显示窗口等待时间，方便观察画面
+
 #include "include/detect.hpp"
 #include "include/data.hpp"
 #include "include/pnp.hpp"
@@ -187,87 +189,38 @@ void display_detection_results(const cv::Mat& frame,
     // 绘制传统检测的灯条和装甲板
     for (size_t i = 0; i < armors.size(); ++i) {
         const auto& armor = armors[i];
-        // 绘制左右灯条
-        const auto& left_light = armor.left_light;
-        const auto& right_light = armor.right_light;
-
-        // 绘制灯条顶部和底部标记点
-        cv::circle(display_frame, left_light.top, 3, cv::Scalar(255, 255, 255), 1);
-        cv::circle(display_frame, left_light.bottom, 3, cv::Scalar(255, 255, 255), 1);
-        cv::circle(display_frame, right_light.top, 3, cv::Scalar(255, 255, 255), 1);
-        cv::circle(display_frame, right_light.bottom, 3, cv::Scalar(255, 255, 255), 1);
-
-        // 绘制灯条线（根据颜色选择不同颜色）
-        auto left_color = left_light.color == EnemyColor::RED ? cv::Scalar(255, 0, 255) : cv::Scalar(255, 255, 0);
-        auto right_color = right_light.color == EnemyColor::RED ? cv::Scalar(255, 0, 255) : cv::Scalar(255, 255, 0);
-        cv::line(display_frame, left_light.top, left_light.bottom, left_color, 5);
-        cv::line(display_frame, right_light.top, right_light.bottom, right_color, 5);
-
-        // 绘制装甲板对角线
-        cv::line(display_frame, left_light.top, right_light.bottom, cv::Scalar(0, 255, 0), 2);
-        cv::line(display_frame, left_light.bottom, right_light.top, cv::Scalar(0, 255, 0), 2);
-
-        // 绘制装甲板中心点
-        cv::circle(display_frame, armor.center, 5, cv::Scalar(255, 0, 0), -1);
-
-        // 显示分类结果
-        cv::putText(display_frame, armor.classfication_result, left_light.top,
-                    cv::FONT_HERSHEY_SIMPLEX, 0.8, cv::Scalar(0, 255, 255), 2);
-
-        // // 显示PnP距离（在装甲板上方）
-        // if (i < pnp_results.size() && pnp_results[i].success) {
-        //     // 计算装甲板上方位置（取左右灯条顶部的中点再往上偏移）
-        //     cv::Point2f top_center = (left_light.top + right_light.top) / 2;
-        //     cv::Point text_pos(static_cast<int>(top_center.x - 30), static_cast<int>(top_center.y - 10));
-
-        //     // 格式化距离字符串（保留2位小数，单位米）
-        //     std::ostringstream oss;
-        //     oss << std::fixed << std::setprecision(2) << pnp_results[i].distance << "m";
-
-        //     cv::putText(display_frame, oss.str(), text_pos,
-        //                 cv::FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(0, 255, 0), 2);
-        // }
+        // 四个点构成的装甲框（只保留基础轮廓）
+        std::vector<cv::Point> quad = {
+            cv::Point(cvRound(armor.left_light.top.x), cvRound(armor.left_light.top.y)),
+            cv::Point(cvRound(armor.right_light.top.x), cvRound(armor.right_light.top.y)),
+            cv::Point(cvRound(armor.right_light.bottom.x), cvRound(armor.right_light.bottom.y)),
+            cv::Point(cvRound(armor.left_light.bottom.x), cvRound(armor.left_light.bottom.y))
+        };
+        cv::polylines(display_frame, quad, true, cv::Scalar(0, 255, 0), 2);
+        for (const auto& p : quad) {
+            cv::circle(display_frame, p, 3, cv::Scalar(255, 255, 255), -1);
+        }
     }
 
-    // 绘制Kalman滤波结果
-    for (const auto& kalman : kalman_results) {
-        if (kalman.is_tracking) {
-            // 绘制滤波后的中心点（黄色实心圆）
-            cv::circle(display_frame, kalman.filtered_center, 8, cv::Scalar(0, 255, 255), -1);
-
-            // 绘制预测的中心点（橙色空心圆）
-            cv::circle(display_frame, kalman.predicted_center, 10, cv::Scalar(0, 165, 255), 2);
-
-            // 绘制从滤波点到预测点的速度向量线（白色）
-            cv::line(display_frame, kalman.filtered_center, kalman.predicted_center,
-                     cv::Scalar(255, 255, 255), 2);
-
-            // 显示速度信息（在预测点旁边）
-            std::ostringstream oss;
-            oss << "v:(" << std::fixed << std::setprecision(1)
-                << kalman.velocity.x << "," << kalman.velocity.y << ")";
-            cv::putText(display_frame, oss.str(),
-                        cv::Point(static_cast<int>(kalman.predicted_center.x + 15),
-                                  static_cast<int>(kalman.predicted_center.y)),
-                        cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(255, 255, 255), 1);
-        } else if (kalman.lost_count > 0) {
-            // 目标丢失时，用红色空心圆显示预测位置
-            cv::circle(display_frame, kalman.predicted_center, 10, cv::Scalar(0, 0, 255), 2);
-
-            // 显示丢失帧数
-            std::ostringstream oss;
-            oss << "lost:" << kalman.lost_count;
-            cv::putText(display_frame, oss.str(),
-                        cv::Point(static_cast<int>(kalman.predicted_center.x + 15),
-                                  static_cast<int>(kalman.predicted_center.y)),
-                        cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 0, 255), 1);
+    // 绘制 Kalman 预测/滤波中心
+    if (!kalman_results.empty()) {
+        const auto& k = kalman_results.front();
+        cv::circle(display_frame, k.filtered_center, 5, cv::Scalar(0, 255, 255), -1);
+        cv::circle(display_frame, k.predicted_center, 7, cv::Scalar(0, 165, 255), 2);
+        cv::putText(display_frame, "KF", k.filtered_center + cv::Point2f(6, -6),
+                    cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 255, 255), 1);
+        cv::putText(display_frame, "Pred", k.predicted_center + cv::Point2f(6, 14),
+                    cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 165, 255), 1);
+        if (k.is_rotating) {
+            cv::putText(display_frame, "ROT", cv::Point(10, 30),
+                        cv::FONT_HERSHEY_SIMPLEX, 1.0, cv::Scalar(0, 0, 255), 2);
         }
     }
 
     cv::imshow("Armor Detection Test", display_frame);
 
     // 处理按键输入：'q'退出，空格暂停/继续
-    char key = cv::waitKey(1);
+    char key = cv::waitKey(kWaitKeyDelayMs);
     if (key == 'q' || key == 'Q') {
         std::cout << "用户中断测试" << std::endl;
         cv::destroyAllWindows();

@@ -142,7 +142,7 @@ height: 720            # 图像高度
 - Linux Kernel 6.8.0-87-generic
 
 ### 核心依赖
-- **OpenVINO**: 2024.6.0 (安装路径: `/opt/intel/openvino_2024.6.0`)
+- **OpenVINO**: 2024.6.0 (请将 OpenVINO 安装在工作空间父目录，例如 `../openvino_2024.6.0`；CMake 与脚本会尝试自动定位，或通过 `OPENVINO_DIR` 变量覆盖)
 - **OpenCV**: 4.x (需包含 core, imgproc, highgui, videoio, dnn 模块)
 - **ROS2 包**:
   - rclcpp
@@ -190,8 +190,8 @@ colcon build --packages-select ros2_armor_can
 ### 3. 配置环境
 
 ```bash
-# 加载 OpenVINO 环境
-source /opt/intel/openvino_2024.6.0/setupvars.sh
+# 加载 OpenVINO 环境（假设已安装在工作空间父目录，版本号请根据实际情况调整）
+source ../openvino_2024.6.0/setupvars.sh
 
 # 加载 ROS2 工作空间
 source install/setup.bash
@@ -318,9 +318,9 @@ const std::chrono::milliseconds publish_interval_{100};  // 100ms = 10Hz
 - 查看内核日志：`dmesg | grep can`
 
 ### 3. OpenVINO 找不到
-- 确认安装路径正确
-- 执行 `source /opt/intel/openvino_2024.6.0/setupvars.sh`
-- 检查 CMakeLists.txt 中的路径配置
+- 确认安装路径正确（本项目会自动搜索工作空间父目录下的 `openvino*` 文件夹）
+- 执行 `source ../openvino_2024.6.0/setupvars.sh`（或使用实际目录）
+- 检查 CMakeLists.txt 中 `OpenVINO_DIR` 的设置
 
 ### 4. 检测无输出
 - 检查模型文件是否存在

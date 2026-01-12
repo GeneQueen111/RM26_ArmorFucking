@@ -210,9 +210,9 @@ qos.transient_local();
 | ROS2 | Humble | 中间件 |
 | C++ | C++14 | 语言标准 |
 
-**OpenVINO 路径**：
+**OpenVINO 路径**（推荐将安装包放在工作空间父目录）：
 ```
-/home/ubuntu/桌面/Robomaster/openvino_toolkit_ubuntu22_2025.0.0.17942.1f68be9f594_x86_64/
+../openvino_toolkit_ubuntu22_2025.0.0.17942.1f68be9f594_x86_64/
 ```
 
 ---

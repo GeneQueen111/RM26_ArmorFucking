@@ -31,7 +31,7 @@ Detect::Detect(const std::string& model_path,
     pnp_solver_ = std::make_unique<PnPSolver>(camera_matrix, dist_coeffs);
 
     // 初始化 Kalman 滤波检测器
-    kalman_detector_ = std::make_unique<KalmanDetector>(1e-2, 1e-1, 10);
+    kalman_detector_ = std::make_unique<KalmanDetector>();
 }
 
 void Detect::set_detect_color(EnemyColor color)

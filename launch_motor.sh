@@ -6,7 +6,8 @@ set -e
 #  - 直接运行节点: ./launch_motor.sh node    # armor_send_node
 #  - 直接运行测试: ./launch_motor.sh test    # test_send_node
 
-BASE_DIR="/home/ubuntu/桌面/RM26"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BASE_DIR="${SCRIPT_DIR}"
 PKG_NAME="ros2_armor_can"
 
 echo "=== 启动 ${PKG_NAME} ==="

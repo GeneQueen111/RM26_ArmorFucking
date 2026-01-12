@@ -4,11 +4,39 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORKSPACE_DIR="$SCRIPT_DIR"
 
-# 加载 OpenVINO 2025 环境 - 确保运行时库与编译时一致
-OPENVINO_DIR="/home/ubuntu/桌面/Robomaster/openvino_toolkit_ubuntu22_2025.0.0.17942.1f68be9f594_x86_64"
-if [ -f "$OPENVINO_DIR/setupvars.sh" ]; then
-    echo "正在加载 OpenVINO 2025 环境..."
-    source "$OPENVINO_DIR/setupvars.sh"
+# 加载 OpenVINO 环境 - 首先尝试从工作区父目录定位到 openvino* 安装目录
+WORKSPACE_PARENT="$(dirname "$WORKSPACE_DIR")"
+
+find_openvino_root() {
+    local base_dir="$1"
+    local candidate
+    for candidate in "$base_dir"/openvino*; do
+        [ -e "$candidate" ] || continue
+        if [ -f "$candidate/setupvars.sh" ] || [ -f "$candidate/bin/setupvars.sh" ]; then
+            printf '%s' "$candidate"
+            return 0
+        fi
+    done
+    return 1
+}
+
+if [ -z "$OPENVINO_DIR" ]; then
+    OPENVINO_DIR="$(find_openvino_root "$WORKSPACE_PARENT")"
+fi
+
+setupvars_file=""
+if [ -n "$OPENVINO_DIR" ]; then
+    if [ -f "$OPENVINO_DIR/setupvars.sh" ]; then
+        setupvars_file="$OPENVINO_DIR/setupvars.sh"
+    elif [ -f "$OPENVINO_DIR/bin/setupvars.sh" ]; then
+        setupvars_file="$OPENVINO_DIR/bin/setupvars.sh"
+    fi
+fi
+
+if [ -n "$setupvars_file" ]; then
+    echo "正在加载 OpenVINO 环境 ($setupvars_file)"
+    # shellcheck disable=SC1090
+    source "$setupvars_file"
 else
     echo "警告: 未找到 OpenVINO setupvars.sh，推理可能失败"
 fi

@@ -15,10 +15,85 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 endif()
 
 #set
-set(OpenVINO_DIR /home/ubuntu/桌面/Robomaster/openvino_toolkit_ubuntu22_2025.0.0.17942.1f68be9f594_x86_64/runtime/cmake)
+if(NOT COMMAND ros2_find_workspace_root)
+  function(ros2_find_workspace_root _result)
+    set(_dir "${CMAKE_CURRENT_LIST_DIR}")
+    while(TRUE)
+      if(EXISTS "${_dir}/.git")
+        set(${_result} "${_dir}" PARENT_SCOPE)
+        return()
+      endif()
+      get_filename_component(_parent "${_dir}" DIRECTORY)
+      if(_parent STREQUAL _dir)
+        break()
+      endif()
+      set(_dir "${_parent}")
+    endwhile()
+    set(${_result} "" PARENT_SCOPE)
+  endfunction()
+endif()
+
+if(NOT COMMAND ros2_find_openvino_dir)
+  function(ros2_find_openvino_dir _result)
+    ros2_find_workspace_root(_workspace_root)
+    if(NOT _workspace_root)
+      set(${_result} "" PARENT_SCOPE)
+      return()
+    endif()
+
+    get_filename_component(_workspace_parent "${_workspace_root}" DIRECTORY)
+
+    set(_candidates "")
+    if(DEFINED ENV{OPENVINO_DIR})
+      list(APPEND _candidates "$ENV{OPENVINO_DIR}")
+    endif()
+    list(APPEND _candidates
+      "${_workspace_parent}/openvino_toolkit_2024.6.0"
+      "${_workspace_parent}/openvino_toolkit"
+      "${_workspace_parent}/openvino_2024.6.0"
+      "${_workspace_parent}/openvino"
+      "${_workspace_parent}/openvino_venv"
+    )
+
+    set(_suffixes ""
+      "/runtime/cmake"
+      "/runtime"
+    )
+
+    foreach(_base IN LISTS _candidates)
+      foreach(_suffix IN LISTS _suffixes)
+        set(_candidate "${_base}${_suffix}")
+        if(_candidate AND EXISTS "${_candidate}/openvinoConfig.cmake")
+          set(${_result} "${_candidate}" PARENT_SCOPE)
+          return()
+        endif()
+      endforeach()
+    endforeach()
+
+    set(${_result} "" PARENT_SCOPE)
+  endfunction()
+endif()
+
+if(NOT DEFINED OpenVINO_DIR OR OpenVINO_DIR STREQUAL "")
+  ros2_find_openvino_dir(_detected_openvino_dir)
+  if(_detected_openvino_dir)
+    set(OpenVINO_DIR "${_detected_openvino_dir}" CACHE PATH "OpenVINO runtime cmake directory")
+  else()
+    message(WARNING "OpenVINO directory not auto-detected; set OpenVINO_DIR if needed")
+  endif()
+endif()
+
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 find_package(ament_cmake_auto REQUIRED)
 ament_auto_find_build_dependencies()
+
+ros2_find_workspace_root(_workspace_root)
+if(NOT _workspace_root)
+  message(FATAL_ERROR "Unable to locate workspace root for dependency paths")
+endif()
+
+get_filename_component(DETECTION_DIR "${_workspace_root}/src/rm_auto_aim/detection" ABSOLUTE)
+get_filename_component(RECIVE_DIR "${_workspace_root}/src/recive_pkg" ABSOLUTE)
 
 ament_auto_add_library(${PROJECT_NAME} SHARED
   src/hik_camera_node.cpp
@@ -38,11 +113,10 @@ include_directories(${EIGEN3_INCLUDE_DIRS}
                     ${sensor_msgs_INCLUDE_DIRS}
                     ${geometry_msgs_INCLUDE_DIRS}
                     ${std_msgs_INCLUDE_DIRS}
-                    /home/ubuntu/桌面/RM26/src/rm_auto_aim/detection/include
-                    /home/ubuntu/桌面/RM26/src/rm_auto_aim/detection/Eigen
-                    /home/ubuntu/桌面/RM26/src/rm_auto_aim/detection/TrackerHeader
-                    /home/ubuntu/桌面/RM26/src/rm_auto_aim/detection/TrackerHeader
-                    /home/ubuntu/桌面/RM26/src/recive_pkg/include
+                    ${DETECTION_DIR}/include
+                    ${DETECTION_DIR}/Eigen
+                    ${DETECTION_DIR}/TrackerHeader
+                    ${RECIVE_DIR}/include
                     )
 
 

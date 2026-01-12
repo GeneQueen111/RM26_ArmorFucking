@@ -18,16 +18,20 @@
 ### 2.1 安装路径
 
 ```
-/home/ubuntu/桌面/Robomaster/openvino_toolkit_ubuntu22_2025.0.0.17942.1f68be9f594_x86_64/
+../openvino_toolkit_ubuntu22_2025.0.0.17942.1f68be9f594_x86_64/
 ```
+> 该目录应位于工作空间根目录的父目录中，CMake 与启动脚本会在此处寻找 OpenVINO。
 
 ### 2.2 CMake 配置
 
+OpenVINO_DIR 的路径由 CMake 自动搜索（查找父目录下的 `openvino*` 与 `runtime/cmake`），在此基础上直接调用：
+
 ```cmake
-set(OpenVINO_DIR /home/ubuntu/桌面/Robomaster/openvino_toolkit_ubuntu22_2025.0.0.17942.1f68be9f594_x86_64/runtime/cmake)
 find_package(OpenVINO REQUIRED)
 target_link_libraries(${PROJECT_NAME} PRIVATE openvino::runtime)
 ```
+
+如需覆盖默认查找行为，可在构建时添加 `-DOpenVINO_DIR=/path/to/openvino/runtime/cmake`，或在 CMake 中手动设定。
 
 ### 2.3 推理优化配置
 

@@ -1,10 +1,14 @@
 # Repository Guidelines
 
+## 只能用中文回答用户
+
+## 如果你不清楚用户的意图，清提出几个关键问题，让用户回答后再干活
+
 ## Project Structure & Module Organization
 RM26_ROS2PKG is a ROS 2 Humble workspace: core packages live in `src/` and build outputs land in `build/` and `install/`. `src/recive_pkg` owns the ROS nodes that subscribe to `/image_raw` and publish `target_delta`, while `src/rm_auto_aim/detection` houses the OpenVINO pipeline and its ONNX models in `model/0526.onnx`. Hardware drivers live in `src/ros2_hik_camera-main` (camera configs in `config/camera_params.yaml`) and `src/ros2_armor_can`. Helper scripts such as `launch_motor.sh`, `kill_nodes.sh`, and `incremental_build.sh` sit at the workspace root; performance logs accumulate in `log/`.
 
 ## Build, Test, and Development Commands
-- `source /opt/intel/openvino_2024.6.0/setupvars.sh && source install/setup.bash` to load toolchains before running nodes or tests.
+- `source ../openvino_2024.6.0/setupvars.sh && source install/setup.bash` to load toolchains before running nodes or tests (OpenVINO 目录默认放在工作区父目录，脚本会自动搜索，可通过 `OPENVINO_DIR` 覆盖)
 - `colcon build --symlink-install` compiles every package, while `colcon build --packages-select recive_pkg` or `--packages-select detection` keep iterative builds tight.
 - `./incremental_build.sh` detects changed YAML configs and rebuilds affected packages automatically.
 - `ros2 launch ros2_armor_can motor_all.launch.py` starts the full perception-to-CAN stack; use `ros2 run recive_pkg recive_pkg` or `bash launch_motor.sh` for ad-hoc bringup.
